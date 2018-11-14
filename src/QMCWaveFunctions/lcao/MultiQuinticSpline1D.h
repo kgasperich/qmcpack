@@ -33,17 +33,24 @@ namespace qmcplusplus
       T upper_bound;
       T OneOverLogDelta;
       double LogDelta;
+      int num_points;
+      aligned_vector<T> r_values;
 
       inline void set(T ri, T rf, int n)
       {
         lower_bound=ri;
         upper_bound=rf;
-        //num_points=n;
+        num_points=n;
         double ratio = rf/ri;
         double log_ratio = std::log(ratio);
         double dlog_ratio = log_ratio/static_cast<double>(n-1);
         LogDelta = dlog_ratio;
         OneOverLogDelta = 1.0/dlog_ratio;
+        r_values.resize(n);
+        for (int i=0; i<n; i++)
+        {
+          r_values[i] = ri*std::exp(i*dlog_ratio);
+        }
       }
 
       inline int locate(T r) const
@@ -53,7 +60,8 @@ namespace qmcplusplus
 
       inline T operator()(int i)
       {
-        return static_cast<T>(lower_bound*std::exp(i*LogDelta));
+        //return static_cast<T>(lower_bound*std::exp(i*LogDelta));
+        return r_values[i];
       }
 
       //CHECK MIXED PRECISION SENSITIVITY
@@ -61,7 +69,8 @@ namespace qmcplusplus
       {
         loc=static_cast<int>(std::log(r/lower_bound)*OneOverLogDelta);
         //return r-static_cast<T>(lower_bound*std::exp(loc*LogDelta));
-        return r-lower_bound*std::exp(loc*LogDelta);
+        //return r-lower_bound*std::exp(loc*LogDelta);
+        return r-r_values[i];
       }
     };
 
