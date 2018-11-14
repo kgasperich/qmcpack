@@ -70,7 +70,7 @@ namespace qmcplusplus
         loc=static_cast<int>(std::log(r/lower_bound)*OneOverLogDelta);
         //return r-static_cast<T>(lower_bound*std::exp(loc*LogDelta));
         //return r-lower_bound*std::exp(loc*LogDelta);
-        return r-r_values[i];
+        return r-r_values[loc];
       }
     };
 
