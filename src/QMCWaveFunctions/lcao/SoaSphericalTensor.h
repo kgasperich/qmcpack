@@ -185,8 +185,24 @@ inline void SoaSphericalTensor<T>::evaluate_bare(T x, T y, T z, T* restrict Ylm)
 template<typename T>
 inline void SoaSphericalTensor<T>::evaluateVGL(T x, T y, T z)
 {
+  const T sqrt2inv = std::sqrt(0.5);
   T* restrict Ylm=cYlm.data(0);
-  evaluate_bare(x,y,z,Ylm);
+  // remove sign
+  if (Addsign){
+    evaluate_bare(-x,-y,z,Ylm);
+  } else {
+    evaluate_bare(x,y,z,Ylm);
+  }
+  // remove norm factor for m!=0
+  // might be better to just leave it in, add it for m==0, and then remove at the end
+  for (int l=1; l<=Lmax; l++){
+    int ll = index(l,0);
+    for (int m=1; m<=l; m++){
+      Ylm[ll+m]*=sqrt2inv;
+      Ylm[ll-m]*=sqrt2inv;
+    }
+  }
+
 
   CONSTEXPR T czero(0);
   CONSTEXPR T ahalf(0.5);
