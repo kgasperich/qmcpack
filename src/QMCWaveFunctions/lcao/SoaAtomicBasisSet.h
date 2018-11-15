@@ -14,6 +14,8 @@
 #ifndef QMCPLUSPLUS_SOA_SPHERICALORBITAL_BASISSET_H
 #define QMCPLUSPLUS_SOA_SPHERICALORBITAL_BASISSET_H
 
+#include "Utilities/NewTimer.h"
+
 namespace qmcplusplus
 {
   /* A basis set for a center type 
@@ -23,6 +25,11 @@ namespace qmcplusplus
    *
    * \f$ \phi_{n,l,m}({\bf r})=R_{n,l}(r) Y_{l,m}(\theta) \f$
    */
+  typedef enum { V_OUTER_TIMER, VGL_OUTER_TIMER, 
+                 V_INNER_TIMER, VGL_INNER_TIMER,
+                 YLM_V_TIMER, YLM_VGL_TIMER,
+                 RNL_V_TIMER, RNL_VGL_TIMER} evalTimerEnum;
+  
   template<typename ROT, typename SH>
     struct SoaAtomicBasisSet
     {
@@ -30,6 +37,7 @@ namespace qmcplusplus
       typedef typename ROT::value_type value_type;
       typedef typename ROT::grid_type  grid_type;
 
+      std::vector<NewTimer*> evalTimers;
       ///size of the basis set
       int BasisSetSize;
       ///Number of Cell images for the evaluation of the orbital with PBC. If No PBC, should be 0;
@@ -53,7 +61,22 @@ namespace qmcplusplus
       std::vector<grid_type*> Grids;
       ///the constructor
       explicit SoaAtomicBasisSet(int lmax, bool addsignforM=false)
-        :Ylm(lmax,addsignforM){}
+        :Ylm(lmax,addsignforM){
+          std::vector<std::string> tnames(8);
+          tnames[0] = "_V_OUTER";
+          tnames[1] = "_VGL_OUTER";
+          tnames[2] = "_V_INNER";
+          tnames[3] = "_VGL_INNER";
+          tnames[4] = "_V_YLM";
+          tnames[5] = "_VGL_YLM";
+          tnames[6] = "_V_RNL";
+          tnames[7] = "_VGL_RNL";
+          for (int i=0; i < tnames.size(); i++)
+          {
+            std::string name = "SoaAtomicBasisSet::eval" + tnames[i];
+            evalTimers.push_back(TimerManager.createTimer(name));
+          }
+        }
 
       SoaAtomicBasisSet(const SoaAtomicBasisSet& in)=default;
 
@@ -136,6 +159,7 @@ namespace qmcplusplus
         inline void
         evaluateVGL(const LAT& lattice, const T r, const PosType& dr, const size_t offset,  VGL& vgl)
         {
+          evalTimers[VGL_OUTER_TIMER]->start();
 
           int TransX,TransY,TransZ;
 
@@ -191,15 +215,21 @@ namespace qmcplusplus
   
                     //SIGN Change!!
                     const T x=-dr_new[0], y=-dr_new[1], z=-dr_new[2];
+
+                    evalTimers[YLM_VGL_TIMER]->start();
                     Ylm.evaluateVGL(x,y,z);
+                    evalTimers[YLM_VGL_TIMER]->stop();
   
   
   
+                    evalTimers[RNL_VGL_TIMER]->start();
                     MultiRnl->evaluate(r_new,phi,dphi,d2phi);
+                    evalTimers[RNL_VGL_TIMER]->stop();
   
   
                     const T rinv=cone/r_new;
   
+                    evalTimers[VGL_INNER_TIMER]->start();
                     for(size_t ib=0; ib<BasisSetSize; ++ib)
                     {
                          const int nl(NL[ib]);
@@ -220,15 +250,18 @@ namespace qmcplusplus
                          dpsi_z[ib] += ang*gr_z+vr*ang_z;
                          d2psi[ib]  += ang*(ctwo*drnloverr+d2phi[nl]) + ctwo*(gr_x*ang_x+gr_y*ang_y+gr_z*ang_z)+vr*ylm_l[lm];
                     }
+                    evalTimers[VGL_INNER_TIMER]->stop();
                  }
               }
           } 
+          evalTimers[VGL_OUTER_TIMER]->stop();
         }
 
       template<typename LAT, typename T, typename PosType>
       inline void
         evaluateV(const LAT& lattice, const T r, const PosType& dr, T* restrict psi) 
         {
+          evalTimers[V_OUTER_TIMER]->start();
          
           int TransX,TransY,TransZ;
 
@@ -259,14 +292,22 @@ namespace qmcplusplus
               
                     if(r_new>Rmax)   continue;
 
+                    evalTimers[YLM_V_TIMER]->start();
                     Ylm.evaluateV(-dr_new[0],-dr_new[1],-dr_new[2],ylm_v);
+                    evalTimers[YLM_V_TIMER]->stop();
+
+                    evalTimers[RNL_V_TIMER]->start();
                     MultiRnl->evaluate(r_new,phi_r);
+                    evalTimers[RNL_V_TIMER]->stop();
            
+                    evalTimers[V_INNER_TIMER]->start();
                     for(size_t ib=0; ib<BasisSetSize; ++ib)
                        psi[ib] += ylm_v[ LM[ib] ]*phi_r[ NL[ib] ];
+                    evalTimers[V_INNER_TIMER]->stop();
                  }
               }
            }
+          evalTimers[V_OUTER_TIMER]->stop();
           
         }
     };
