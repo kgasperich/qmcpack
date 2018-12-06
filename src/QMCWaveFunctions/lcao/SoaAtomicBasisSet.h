@@ -229,8 +229,12 @@ namespace qmcplusplus
       inline void
         evaluateV(const LAT& lattice, const T r, const PosType& dr, T* restrict psi) 
         {
-         
-          int TransX,TransY,TransZ;
+        
+          TinyVector<int,3> TransXYZ;
+          int &TransX = TransXYZ[0];
+          int &TransY = TransXYZ[1];
+          int &TransZ = TransXYZ[2];
+          //int TransX,TransY,TransZ;
 
           PosType dr_new;
           T r_new;
@@ -251,9 +255,11 @@ namespace qmcplusplus
                  {
                     //Allows to increment cells from 0,1,-1,2,-2,3,-3 etc...
                     TransZ=(( k%2 ) * 2 -1) * ( (k+1)/2 ); 
-                    dr_new[0]=dr[0]+TransX*lattice.R(0,0)+TransY*lattice.R(1,0)+TransZ*lattice.R(2,0);
-                    dr_new[1]=dr[1]+TransX*lattice.R(0,1)+TransY*lattice.R(1,1)+TransZ*lattice.R(2,1);
-                    dr_new[2]=dr[2]+TransX*lattice.R(0,2)+TransY*lattice.R(1,2)+TransZ*lattice.R(2,2);
+                    //dr_new[0]=dr[0]+TransX*lattice.R(0,0)+TransY*lattice.R(1,0)+TransZ*lattice.R(2,0);
+                    //dr_new[1]=dr[1]+TransX*lattice.R(0,1)+TransY*lattice.R(1,1)+TransZ*lattice.R(2,1);
+                    //dr_new[2]=dr[2]+TransX*lattice.R(0,2)+TransY*lattice.R(1,2)+TransZ*lattice.R(2,2);
+                    
+                    dr_new = dr + dot(TransXYZ,lattice.R);
 
                     r_new=std::sqrt(dot(dr_new,dr_new));
               
