@@ -27,6 +27,10 @@
 #if defined(ENABLE_CUDA)
 #include "QMCWaveFunctions/Fermion/DelayedUpdateCUDA.h"
 #endif
+//TODO: fix this when cmake is fixed
+//#if defined(ENABLE_ONEAPI)
+#include "QMCWaveFunctions/Fermion/DelayedUpdateSYCL.h"
+//#endif
 
 namespace qmcplusplus
 {
@@ -250,6 +254,11 @@ extern template class DiracDeterminant<>;
 #if defined(ENABLE_CUDA)
 extern template class DiracDeterminant<DelayedUpdateCUDA<QMCTraits::ValueType, QMCTraits::QTFull::ValueType>>;
 #endif
+//Not sure about this one
+//TODO: fix this when cmake is fixed
+//#if defined(ENABLE_ONEAPI)
+extern template class DiracDeterminant<DelayedUpdateSYCL<QMCTraits::ValueType, QMCTraits::QTFull::ValueType>>;
+//#endif
 
 } // namespace qmcplusplus
 #endif

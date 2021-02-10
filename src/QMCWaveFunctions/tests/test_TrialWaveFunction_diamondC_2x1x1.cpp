@@ -483,7 +483,8 @@ void testTrialWaveFunction_diamondC_2x1x1(const int ndelay)
     log_values[iw] = {wf_ref_list[iw].get().getLogPsi(), wf_ref_list[iw].get().getPhase()};
   TrialWaveFunction::flex_evaluateGL(wf_ref_list, p_ref_list, true);
   for (int iw = 0; iw < log_values.size(); iw++)
-    REQUIRE(LogComplexApprox(log_values[iw]) == LogValueType{wf_ref_list[iw].get().getLogPsi(), wf_ref_list[iw].get().getPhase()});
+    REQUIRE(LogComplexApprox(log_values[iw]) ==
+            LogValueType{wf_ref_list[iw].get().getLogPsi(), wf_ref_list[iw].get().getPhase()});
 
 #endif
 }
@@ -492,6 +493,10 @@ TEST_CASE("TrialWaveFunction_diamondC_2x1x1", "[wavefunction]")
 {
   using VT   = QMCTraits::ValueType;
   using FPVT = QMCTraits::QTFull::ValueType;
+#if defined(ENABLE_ONEAPI) && defined(ENABLE_OFFLOAD)
+  testTrialWaveFunction_diamondC_2x1x1<DiracDeterminantBatched<MatrixDelayedUpdateSYCL<VT, FPVT>>>(1);
+  testTrialWaveFunction_diamondC_2x1x1<DiracDeterminantBatched<MatrixDelayedUpdateSYCL<VT, FPVT>>>(2);
+#endif
 #if defined(ENABLE_CUDA) && defined(ENABLE_OFFLOAD)
   testTrialWaveFunction_diamondC_2x1x1<DiracDeterminantBatched<MatrixDelayedUpdateCUDA<VT, FPVT>>>(1);
   testTrialWaveFunction_diamondC_2x1x1<DiracDeterminantBatched<MatrixDelayedUpdateCUDA<VT, FPVT>>>(2);
