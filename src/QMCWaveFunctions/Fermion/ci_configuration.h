@@ -16,22 +16,33 @@
 #define QMCPLUSPLUS_CI_CONFIGURATION_H
 #include <vector>
 #include <iostream>
+#include <boost/dynamic_bitset.hpp>
 
 namespace qmcplusplus
 {
 // Defines a single CI ci_configuration, with respect to the hartree fock ci_configuration.
 struct ci_configuration
 {
+  //private:
+  //  bool taken;
+  //public:
   // vector of bits, each bit determines whether the corresponding state is occupied or not
   std::vector<bool> occup;
+  private:
   bool taken;
+  public:
   int nExct; // with respect to base ci_configuration, which we assume is hf
 
   ci_configuration() : taken(false), nExct(0) {}
 
   ci_configuration(std::vector<bool>& v, int n) : occup(v), taken(false), nExct(n) {}
   ci_configuration(const ci_configuration& c) : occup(c.occup), taken(c.taken), nExct(c.nExct) {}
-
+  ci_configuration(boost::dynamic_bitset<>& bits) : taken(false), nExct(0) {
+    occup.resize(bits.size(), false);
+    for (int i = 0; i < bits.size(); i++){
+      occup[i] = bits.test(i);
+    }
+  }
   ~ci_configuration() {}
 
   bool operator==(const ci_configuration& c) const
@@ -123,6 +134,8 @@ struct ci_configuration
     for (int i = 0; i < str_size; i++)
       occup[i] = str[i] - '0';
   }
+
+
 };
 
 inline std::ostream& operator<<(std::ostream& out, const ci_configuration& c)

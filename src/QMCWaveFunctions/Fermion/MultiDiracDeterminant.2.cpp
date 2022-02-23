@@ -19,7 +19,7 @@
  */
 #include "QMCWaveFunctions/Fermion/MultiDiracDeterminant.h"
 #include "Numerics/MatrixOperators.h"
-
+#include <typeinfo>
 namespace qmcplusplus
 {
 /** shared function used by BuildDotProductsAndCalculateRatios */

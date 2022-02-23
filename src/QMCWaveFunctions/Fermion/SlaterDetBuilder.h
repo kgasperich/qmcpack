@@ -20,6 +20,7 @@
 #include "Configuration.h"
 #include "WaveFunctionComponentBuilder.h"
 #include <hdf/hdf_archive.h>
+#include <boost/dynamic_bitset.hpp>
 
 namespace qmcplusplus
 {
@@ -94,7 +95,8 @@ private:
                    std::vector<ValueType>& CSFcoeff,
                    std::vector<size_t>& DetsPerCSF,
                    std::vector<RealType>& CSFexpansion,
-                   bool& usingCSF) const;
+                   bool& usingCSF,
+                   int& refdet_id) const;
 
   bool readDetListH5(xmlNodePtr cur,
                      std::vector<std::vector<ci_configuration>>& uniqueConfgs,
@@ -102,7 +104,28 @@ private:
                      std::vector<std::string>& CItags,
                      std::vector<ValueType>& coeff,
                      bool& optimizeCI,
-                     std::vector<int>& nptcls) const;
+                     std::vector<int>& nptcls,
+                     int& refdet_id) const;
+
+  int sort_unique_dets(std::vector<std::vector<ci_configuration>>& uniqueConfgs,
+                       std::vector<std::vector<size_t>>& C2nodes,
+                       std::vector<std::string>& CItags,
+                       std::vector<ValueType>& coeff,
+                       std::vector<Matrix<int64_t>>& CIdet,
+                       std::vector<ValueType>& CIcoeff,
+                       RealType cutoff,
+                       size_t n_orb,
+                       unsigned bit_kind) const;
+
+  int sort_unique_dets_impl(std::vector<std::vector<ci_configuration>>& uniqueConfgs,
+                            std::vector<std::vector<size_t>>& C2nodes,
+                            std::vector<std::string>& CItags,
+                            std::vector<ValueType>& coeff,
+                            std::vector<std::vector<boost::dynamic_bitset<>>>& CIdet,
+                            std::vector<ValueType>& CIcoeff,
+                            RealType cutoff,
+                            size_t n_orb,
+                            unsigned bit_kind) const;
 
   template<typename VT,
            std::enable_if_t<(std::is_same<VT, ValueType>::value) && (std::is_floating_point<VT>::value), int> = 0>

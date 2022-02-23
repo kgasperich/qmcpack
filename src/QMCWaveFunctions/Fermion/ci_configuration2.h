@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <iostream>
 #include <stdexcept>
+#include <boost/dynamic_bitset.hpp>
 
 namespace qmcplusplus
 {
@@ -32,6 +33,14 @@ struct ci_configuration2
 
   ci_configuration2(std::vector<size_t>& v) : occup(v.begin(), v.end()) {}
   ci_configuration2(const ci_configuration2& c) : occup(c.occup) {}
+  template<size_t Nbits> ci_configuration2(boost::dynamic_bitset<>& bits) {
+    occup.clear();
+    for (size_t i=0; i<bits.size(); i++){
+      if (bits.test(i))
+        occup.push_back(i);
+    }
+
+  }
 
   ~ci_configuration2() {}
 

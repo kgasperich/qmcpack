@@ -39,6 +39,7 @@
 //#include "QMCWaveFunctions/Fermion/ci_node.h"
 #include "QMCWaveFunctions/Fermion/ci_configuration.h"
 #include "QMCWaveFunctions/Fermion/ci_configuration2.h"
+#include <boost/dynamic_bitset.hpp>
 
 namespace qmcplusplus
 {
@@ -503,17 +504,19 @@ bool SlaterDetBuilder::createMSDFast(std::vector<std::unique_ptr<MultiDiracDeter
       DetListNode = curTemp;
     curTemp = curTemp->next;
   }
-
+  //FIXME: change this to use the det with the highest weight as reference; for now choosing 0
+  // should be determined inside readDetList/H5
+  int refdet_id = 0;
   bool success = true;
   std::string HDF5Path(getXMLAttributeValue(DetListNode, "href"));
   if (!HDF5Path.empty())
   {
     app_log() << "Found Multideterminants in H5 File" << std::endl;
-    success = readDetListH5(cur, uniqueConfgs, C2nodes, CItags, C, optimizeCI, nptcls);
+    success = readDetListH5(cur, uniqueConfgs, C2nodes, CItags, C, optimizeCI, nptcls, refdet_id);
   }
   else
     success = readDetList(cur, uniqueConfgs, C2nodes, CItags, C, optimizeCI, nptcls, CSFcoeff, DetsPerCSF, CSFexpansion,
-                          usingCSF);
+                          usingCSF, refdet_id);
 
   if (!success)
     return false;
@@ -619,9 +622,11 @@ bool SlaterDetBuilder::readDetList(xmlNodePtr cur,
                                    std::vector<ValueType>& CSFcoeff,
                                    std::vector<size_t>& DetsPerCSF,
                                    std::vector<RealType>& CSFexpansion,
-                                   bool& usingCSF) const
+                                   bool& usingCSF,
+                                   int& refdet_id) const
 {
   bool success = true;
+  success = false;
 
   const int nGroups = uniqueConfgs.size();
   for (int grp = 0; grp < nGroups; grp++)
@@ -868,6 +873,17 @@ bool SlaterDetBuilder::readDetList(xmlNodePtr cur,
         if (found)
         {
           C2nodes[grp][i] = k;
+  size_t H5_ndets, H5_nstates;
+  /// 64 bit fixed width integer
+  const unsigned bit_kind = 64;
+  static_assert(bit_kind == sizeof(int64_t) * 8, "Must be 64 bit fixed width integer");
+  /// the number of 64 bit integers which represent the binary string for occupation
+  int N_int;
+  std::string Dettype = "DETS";
+  ValueType sumsq     = 0.0;
+  OhmmsAttributeSet spoAttrib;
+  spoAttrib.add(ndets, "size");
+  spoAttrib.add(Dettype, "type");
         }
         else
         {
@@ -883,6 +899,9 @@ bool SlaterDetBuilder::readDetList(xmlNodePtr cur,
 
     std::vector<int> cnts(nGroups, 0);
     std::vector<std::unordered_map<std::string, int>> MyMaps(nGroups);
+    std::vector<ValueType> ci_unsorted;
+    std::vector<std::vector<std::string>> occs(nGroups);
+
     while (cur != NULL) //check the basis set
     {
       std::string cname(getNodeName(cur));
@@ -986,7 +1005,8 @@ bool SlaterDetBuilder::readDetListH5(xmlNodePtr cur,
                                      std::vector<std::string>& CItags,
                                      std::vector<ValueType>& coeff,
                                      bool& optimizeCI,
-                                     std::vector<int>& nptcls) const
+                                     std::vector<int>& nptcls,
+                                     int& refdet_id) const
 {
   bool success = true;
   int extlevel(0);
@@ -1157,7 +1177,8 @@ bool SlaterDetBuilder::readDetListH5(xmlNodePtr cur,
 
   hin.close();
   app_log() << " Done reading " << ndets << " CIs from H5!" << std::endl;
-
+  
+  //refdet_id = sort_unique_dets(uniqueConfgs, C2nodes, CItags, coeff, temps, CIcoeff, cutoff, nstates, bit_kind);
   std::vector<int> cnts(nGroups, 0);
   std::vector<std::unordered_map<std::string, int>> MyMaps(nGroups);
 
@@ -1223,4 +1244,210 @@ bool SlaterDetBuilder::readDetListH5(xmlNodePtr cur,
 
   return success;
 }
+
+/*
+ * inputs:
+ *   CIcoeff: CI coefs [ndet]
+ *   CIdet:   CI dets  [nGroups, [ndets, N_int]]
+ *   cutoff:  min abs val to consider from CIcoeff
+ * 
+ * returns index of reference det (in coeff, not in CIcoeff)
+ * 
+ *   coeff: CI coefs larger in abs. val. than cutoff
+ *   uniqueConfgs: 
+ * 
+ */
+int SlaterDetBuilder::sort_unique_dets(std::vector<std::vector<ci_configuration>>& uniqueConfgs,
+                                       std::vector<std::vector<size_t>>& C2nodes,
+                                       std::vector<std::string>& CItags,
+                                       std::vector<ValueType>& coeff,
+                                       std::vector<Matrix<int64_t>>& CIdet,
+                                       std::vector<ValueType>& CIcoeff,
+                                       RealType cutoff,
+                                       size_t n_orb,
+                                       unsigned bit_kind) const
+{
+  
+  size_t ndets = CIcoeff.size();
+  size_t nGroups = CIdet.size();
+  size_t N_int = CIdet[0].cols();
+
+  std::vector<std::vector<boost::dynamic_bitset<>>> MyCIs_bits(nGroups);
+  for (int grp = 0; grp < nGroups; grp++)
+  {
+    for (int idet = 0; idet < ndets; idet++)
+    {
+      boost::dynamic_bitset<> tmpbits(n_orb, 0);
+      for (int i = 0; i < N_int; i++)
+      {
+        tmpbits <<= bit_kind;
+        tmpbits |= boost::dynamic_bitset(n_orb, CIdet[grp][idet][i]);
+      }
+      MyCIs_bits[grp].push_back(tmpbits);
+    }
+  }
+
+  return sort_unique_dets_impl(uniqueConfgs, C2nodes, CItags, coeff, MyCIs_bits, CIcoeff, cutoff, n_orb, bit_kind);
+}
+
+
+  
+  int SlaterDetBuilder::sort_unique_dets_impl(std::vector<std::vector<ci_configuration>>& uniqueConfgs,
+                                              std::vector<std::vector<size_t>>& C2nodes,
+                                              std::vector<std::string>& CItags,
+                                              std::vector<ValueType>& coeff,
+                                              std::vector<std::vector<boost::dynamic_bitset<>>>& CIdet,
+                                              std::vector<ValueType>& CIcoeff,
+                                              RealType cutoff,
+                                              size_t n_orb,
+                                              unsigned bit_kind) const
+{
+  int refdet_id;
+  size_t ndets = CIcoeff.size();
+  size_t nGroups = CIdet.size();
+  
+  app_log() << "ndets = " << ndets << std::endl;
+  app_log() << "nGroups = " << nGroups << std::endl;
+  app_log() << "N_orb = " << n_orb << std::endl;
+
+  std::vector<ValueType>::iterator maxloc;
+  maxloc = std::max_element(CIcoeff.begin(), CIcoeff.end(), [](ValueType const & lhs, ValueType const & rhs) {return std::abs(lhs) < std::abs(rhs);});
+  refdet_id = std::distance(CIcoeff.begin(), maxloc);
+  app_log() << "max CI coeff at det " << refdet_id << " with value " << std::abs(CIcoeff[refdet_id]) << std::endl;
+
+  std::vector<boost::dynamic_bitset<>> refdet_unocc_bits;
+  for (int grp = 0; grp < nGroups; grp++)
+    refdet_unocc_bits.push_back(~(CIdet[grp][refdet_id]));
+  
+
+  // make ci_configuration2 for refdet
+  // ci_configuration2 refdet_config2 = ;
+
+  // first map level takes exc level as key
+  // second map level takes 0/1 det string as key 
+  std::vector<std::map<int, std::unordered_map<std::string, int>>> MyMaps(nGroups);
+  std::vector<std::map<int, std::vector<boost::dynamic_bitset<>>>> tmp_uniqueConfgs(nGroups);
+  std::vector<std::vector<std::pair<int,int>>> tmp_C2nodes(nGroups);
+  std::vector<std::map<int,int>> cnts(nGroups);
+  
+  for (int idet=0; idet < ndets; idet++){
+    if (std::abs(CIcoeff[idet]) < cutoff)
+      continue;
+    
+    //FIXME: modify for xml/csf cases?
+    coeff.push_back(CIcoeff[idet]);
+    std::ostringstream h5tag;
+    h5tag << "CIcoeff_" << idet;
+    CItags.push_back(h5tag.str());
+
+    for (int grp = 0; grp < nGroups; grp++){
+      int exc_lvl = (refdet_unocc_bits[grp] & CIdet[grp][idet]).count();
+      std::string tmp_cidet_str;
+      boost::to_string(CIdet[grp][idet],tmp_cidet_str);
+      std::unordered_map<std::string, int>::const_iterator got = MyMaps[grp][exc_lvl].find(tmp_cidet_str);
+      if (got == MyMaps[grp][exc_lvl].end()){
+        tmp_uniqueConfgs[grp][exc_lvl].push_back(CIdet[grp][idet]);
+        tmp_C2nodes[grp].push_back(std::pair<int, int>(exc_lvl,cnts[grp][exc_lvl]));
+        MyMaps[grp][exc_lvl].insert(std::pair<std::string, int>(tmp_cidet_str,cnts[grp][exc_lvl]));
+        cnts[grp][exc_lvl]++;
+      }
+      else
+      {
+        tmp_C2nodes[grp].push_back(std::pair<int,int>(exc_lvl, got->second));
+      }
+    }
+  }
+
+  for (int grp = 0; grp < nGroups; grp++){
+    int cnts = 0;
+    for (std::map<int, std::vector<boost::dynamic_bitset<>>>::const_iterator iter = tmp_uniqueConfgs[grp].begin(); iter != tmp_uniqueConfgs[grp].end(); ++iter){
+      int exc_lvl = iter->first;
+      int ndet_exc = (iter->second).size();
+      app_log() << ndet_exc << std::endl;
+      
+    }
+    for (std::map<int, std::unordered_map<std::string, int>>::const_iterator iter = MyMaps[grp].begin(); iter != MyMaps[grp].end(); ++iter){
+      int exc_lvl = iter->first;
+      for (std::unordered_map<std::string, int>::const_iterator iter2 = (iter->second).begin(); iter2 != (iter->second).end(); ++iter2){
+        int i=0;
+        //uniqueConfgs[grp].push_back(ci_configuration(std::bitset<N_orb>(iter2->first)));
+        //C2nodes[grp]
+      }
+
+
+
+
+    }
+  }
+  
+
+  int64_t testint = 25;
+  app_log() << "string test 25: " << std::bitset<64>(testint).to_string() << std::endl;
+  app_log() << "CIdet[0][0]: " << std::bitset<64>(CIdet[0][0][1]).to_string() + std::bitset<64>(CIdet[0][0][0]).to_string() << std::endl;
+  /*
+
+
+
+  }
+  std::vector<int> cnts(nGroups, 0);
+  std::vector<std::unordered_map<std::string, int>> MyMaps(nGroups);
+
+  app_log() << " Sorting unique CIs" << std::endl;
+  ///This loop will find all unique Determinants in and store them "unsorted" in a new container uniqueConfg_up
+  ///and uniqueConfg_dn. The sorting is not done here
+  for (int ni = 0; ni < ndets; ni++)
+  {
+    if (std::abs(CIcoeff[ni]) < cutoff)
+      continue;
+
+    int j = 0;
+    for (int k = 0; k < N_int; k++)
+    {
+      std::vector<std::bitset<bit_kind>> a2s(nGroups);
+      for (int grp = 0; grp < nGroups; grp++)
+      {
+        int64_t a = temps[grp][ni][k];
+        a2s[grp]  = a;
+      }
+
+      for (int i = 0; i < bit_kind; i++)
+      {
+        if (j < nstates)
+        {
+          for (int grp = 0; grp < nGroups; grp++)
+            MyCIs[grp][j] = a2s[grp][i] ? '1' : '0';
+          j++;
+        }
+      }
+    }
+    coeff.push_back(CIcoeff[ni]);
+    std::ostringstream h5tag;
+    h5tag << "CIcoeff_" << ni;
+    CItags.push_back(h5tag.str());
+
+    for (int grp = 0; grp < nGroups; grp++)
+    {
+      std::unordered_map<std::string, int>::const_iterator got = MyMaps[grp].find(MyCIs[grp]);
+
+      if (got == MyMaps[grp].end())
+      {
+        uniqueConfgs[grp].push_back(dummyCs[grp]);
+        uniqueConfgs[grp].back().add_occupation(MyCIs[grp]);
+        C2nodes[grp].push_back(cnts[grp]);
+        MyMaps[grp].insert(std::pair<std::string, int>(MyCIs[grp], cnts[grp]));
+        cnts[grp]++;
+      }
+      else
+      {
+        C2nodes[grp].push_back(got->second);
+      }
+    }
+    sumsq += CIcoeff[ni] * CIcoeff[ni];
+  }
+  */
+  return refdet_id;
+
+}
+                                              
+
 } // namespace qmcplusplus

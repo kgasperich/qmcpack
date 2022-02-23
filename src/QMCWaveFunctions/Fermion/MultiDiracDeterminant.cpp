@@ -49,15 +49,26 @@ void MultiDiracDeterminant::createDetData(const ci_configuration2& ref,
   const auto& confgList = *ciConfigList;
 
   size_t nci = confgList.size(), nex;
+  app_log() << "confgList.size() = " << confgList.size() << std::endl;
+  app_log() << "data.size() = " << data.size() << std::endl;
+  app_log() << "confgList[0] = " << confgList[0] << std::endl;
+  /*for (size_t i=0; i< confgList.size(); i++){
+    for (size_t j=0; j< confgList[i].occup.size(); j++){
+      app_log() << i << " " << j << " " << confgList[i].occup[j] << std::endl;
+    }
+  }*/
+  app_log() << "confgList[1] = " << confgList[0].occup[0] << std::endl;
   std::vector<size_t> pos(NumPtcls);
   std::vector<size_t> ocp(NumPtcls);
   std::vector<size_t> uno(NumPtcls);
   data.clear();
   sign.resize(nci);
   pairs.clear();
+  std::map<int,std::vector<int>> exc_level_counts;
   for (size_t i = 0; i < nci; i++)
   {
     sign[i] = ref.calculateExcitations(confgList[i], nex, pos, ocp, uno);
+    exc_level_counts[nex].push_back(i);
     data.push_back(nex);
     for (int k = 0; k < nex; k++)
       data.push_back(pos[k]);
@@ -76,6 +87,14 @@ void MultiDiracDeterminant::createDetData(const ci_configuration2& ref,
         if (find(pairs.begin(), pairs.end(), temp) == pairs.end()) //pair is new
           pairs.push_back(temp);
       }
+  }
+  app_log() << "excitation level counts" << std::endl;
+  for (const auto& elem : exc_level_counts){
+    app_log() << elem.first << std::endl;
+    for (const auto& elem2 : elem.second){
+      app_log() << " " << elem2 ;
+    }
+    app_log() << std::endl;
   }
   app_log() << "Number of terms in pairs array: " << pairs.size() << std::endl;
   /*
