@@ -518,17 +518,20 @@ bool SlaterDetBuilder::createMSDFast(std::vector<std::unique_ptr<MultiDiracDeter
   if (!success)
     return false;
 
+  std::vector<ValueType>::iterator maxloc = std::max_element(C.begin(), C.end(), [](ValueType const & lhs, ValueType const & rhs) {return std::abs(lhs) < std::abs(rhs);});
+  int refdet_id = std::distance(C.begin(), maxloc);
+  app_log() << "max CI coeff at det number " << refdet_id << " with value " << std::abs(C[refdet_id]) << std::endl;
   for (int grp = 0; grp < nGroups; grp++)
   {
-    std::vector<ci_configuration2>& list = Dets[grp]->getCIConfigList();
-    list.resize(uniqueConfgs[grp].size());
-    for (int i = 0; i < list.size(); i++)
+    std::vector<ci_configuration2>& detConfgList = Dets[grp]->getCIConfigList();
+    detConfgList.resize(uniqueConfgs[grp].size());
+    for (int i = 0; i < detConfgList.size(); i++)
     {
-      list[i].occup.resize(nptcls[grp]);
+      detConfgList[i].occup.resize(nptcls[grp]);
       int cnt = 0;
       for (int k = 0; k < uniqueConfgs[grp][i].occup.size(); k++)
         if (uniqueConfgs[grp][i].occup[k])
-          list[i].occup[cnt++] = k;
+          detConfgList[i].occup[cnt++] = k;
       if (cnt != nptcls[grp])
       {
         APP_ABORT("Error in SlaterDetBuilder::createMSDFast for ptcl group "
@@ -536,7 +539,7 @@ bool SlaterDetBuilder::createMSDFast(std::vector<std::unique_ptr<MultiDiracDeter
       }
     }
     // you should choose the det with highest weight for reference. for now choosing 0
-    Dets[grp]->set(targetPtcl.first(grp), nptcls[grp], 0);
+    Dets[grp]->set(targetPtcl.first(grp), nptcls[grp], refdet_id, C2nodes[grp]);
   }
 
   if (CSFcoeff.size() == 1)
