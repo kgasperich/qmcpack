@@ -218,40 +218,40 @@ std::unique_ptr<WaveFunctionComponent> SlaterDetBuilder::buildComponent(xmlNodeP
         spo_clones.emplace_back(spo_tmp->makeClone());
       }
 
-        app_summary() << "    Using Bryan's table method." << std::endl;
-        if (BFTrans)
-          myComm->barrier_and_abort("Backflow is not supported by Multi-Slater determinants using the table method!");
+      app_summary() << "    Using Bryan's table method." << std::endl;
+      if (BFTrans)
+        myComm->barrier_and_abort("Backflow is not supported by Multi-Slater determinants using the table method!");
 
-        const bool spinor = targetPtcl.isSpinor();
-        std::vector<std::unique_ptr<MultiDiracDeterminant>> dets;
-        for (int grp = 0; grp < nGroups; grp++)
-        {
-          app_log() << "      Creating base determinant (" << grp << ") for MSD expansion. \n";
-          dets.emplace_back(std::make_unique<MultiDiracDeterminant>(std::move(spo_clones[grp]), spinor));
-        }
+      const bool spinor = targetPtcl.isSpinor();
+      std::vector<std::unique_ptr<MultiDiracDeterminant>> dets;
+      for (int grp = 0; grp < nGroups; grp++)
+      {
+        app_log() << "      Creating base determinant (" << grp << ") for MSD expansion. \n";
+        dets.emplace_back(std::make_unique<MultiDiracDeterminant>(std::move(spo_clones[grp]), spinor));
+      }
 
-        std::unique_ptr<MultiSlaterDetTableMethod> msd_fast;
-        if (msd_algorithm == "precomputed_table_method")
-        {
-          app_summary() << "    Using the table method with precomputing. Faster" << std::endl;
-          msd_fast = std::make_unique<MultiSlaterDetTableMethod>(targetPtcl, std::move(dets), true);
-        }
-        else
-        {
-          app_summary() << "    Using the table method without precomputing. Slower." << std::endl;
-          msd_fast = std::make_unique<MultiSlaterDetTableMethod>(targetPtcl, std::move(dets), false);
-        }
+      std::unique_ptr<MultiSlaterDetTableMethod> msd_fast;
+      if (msd_algorithm == "precomputed_table_method")
+      {
+        app_summary() << "    Using the table method with precomputing. Faster" << std::endl;
+        msd_fast = std::make_unique<MultiSlaterDetTableMethod>(targetPtcl, std::move(dets), true);
+      }
+      else
+      {
+        app_summary() << "    Using the table method without precomputing. Slower." << std::endl;
+        msd_fast = std::make_unique<MultiSlaterDetTableMethod>(targetPtcl, std::move(dets), false);
+      }
 
-        msd_fast->initialize();
-        createMSDFast(msd_fast->Dets, *msd_fast->C2node, *msd_fast->C, *msd_fast->CSFcoeff, *msd_fast->DetsPerCSF,
-                      *msd_fast->CSFexpansion, msd_fast->usingCSF, *msd_fast->myVars, msd_fast->Optimizable,
-                      msd_fast->CI_Optimizable, cur);
+      msd_fast->initialize();
+      createMSDFast(msd_fast->Dets, *msd_fast->C2node, *msd_fast->C, *msd_fast->CSFcoeff, *msd_fast->DetsPerCSF,
+                    *msd_fast->CSFexpansion, msd_fast->usingCSF, *msd_fast->myVars, msd_fast->Optimizable,
+                    msd_fast->CI_Optimizable, cur);
 
-        // The primary purpose of this function is to create all the optimizable orbital rotation parameters.
-        // But if orbital rotation parameters were supplied by the user it will also apply a unitary transformation
-        // and then remove the orbital rotation parameters
-        msd_fast->buildOptVariables();
-        built_singledet_or_multidets = std::move(msd_fast);
+      // The primary purpose of this function is to create all the optimizable orbital rotation parameters.
+      // But if orbital rotation parameters were supplied by the user it will also apply a unitary transformation
+      // and then remove the orbital rotation parameters
+      msd_fast->buildOptVariables();
+      built_singledet_or_multidets = std::move(msd_fast);
     }
     cur = cur->next;
   }
@@ -518,7 +518,9 @@ bool SlaterDetBuilder::createMSDFast(std::vector<std::unique_ptr<MultiDiracDeter
   if (!success)
     return false;
 
-  std::vector<ValueType>::iterator maxloc = std::max_element(C.begin(), C.end(), [](ValueType const & lhs, ValueType const & rhs) {return std::abs(lhs) < std::abs(rhs);});
+  std::vector<ValueType>::iterator maxloc =
+      std::max_element(C.begin(), C.end(),
+                       [](ValueType const& lhs, ValueType const& rhs) { return std::abs(lhs) < std::abs(rhs); });
   int refdet_id = std::distance(C.begin(), maxloc);
   app_log() << "max CI coeff at det number " << refdet_id << " with value " << std::abs(C[refdet_id]) << std::endl;
   for (int grp = 0; grp < nGroups; grp++)

@@ -30,8 +30,7 @@
 
 namespace qmcplusplus
 {
-void MultiDiracDeterminant::set(int first, int nel, int ref_det_id,
-                                std::vector<size_t>& C2nodes_ptcl)
+void MultiDiracDeterminant::set(int first, int nel, int ref_det_id, std::vector<size_t>& C2nodes_ptcl)
 {
   assert(ciConfigList);
   assert(ciConfigList->size() > 0);
@@ -50,22 +49,22 @@ void MultiDiracDeterminant::createDetData(const ci_configuration2& ref,
 {
   const auto& confgList = *ciConfigList;
 
-  size_t nci = confgList.size(), nex;
+  size_t nci     = confgList.size(), nex;
   size_t nex_max = 0;
   std::vector<size_t> pos(NumPtcls);
   std::vector<size_t> ocp(NumPtcls);
   std::vector<size_t> uno(NumPtcls);
   // map key is exc. lvl
-  std::map<int,std::vector<int>> dataMap;
-  std::map<int,std::vector<int>> sortMap;
-  std::vector<RealType> tmp_sign(nci,0);
+  std::map<int, std::vector<int>> dataMap;
+  std::map<int, std::vector<int>> sortMap;
+  std::vector<RealType> tmp_sign(nci, 0);
   data.clear();
   sign.resize(nci);
   pairs.clear();
   for (size_t i = 0; i < nci; i++)
   {
     tmp_sign[i] = ref.calculateExcitations(confgList[i], nex, pos, ocp, uno);
-    nex_max = std::max(nex,nex_max);
+    nex_max     = std::max(nex, nex_max);
     dataMap[nex].push_back(nex);
     sortMap[nex].push_back(i);
     for (int k = 0; k < nex; k++)
@@ -88,16 +87,16 @@ void MultiDiracDeterminant::createDetData(const ci_configuration2& ref,
   }
   app_log() << "Number of terms in pairs array: " << pairs.size() << std::endl;
   (*ndet_per_exc_lvl).clear();
-  (*ndet_per_exc_lvl).resize(nex_max+1,0);
+  (*ndet_per_exc_lvl).resize(nex_max + 1, 0);
   //reorder configs and det data
-  std::vector<size_t> det_idx_order;          // old indices in new order
-  std::vector<size_t> det_idx_reverse(nci,0); // new indices in old order
+  std::vector<size_t> det_idx_order;           // old indices in new order
+  std::vector<size_t> det_idx_reverse(nci, 0); // new indices in old order
 
   // populate data, ordered by exc. lvl.
   // make mapping from new to old det idx
-  for (std::map<int,std::vector<int>>::const_iterator iter = sortMap.begin(); iter != sortMap.end(); ++iter)
+  for (std::map<int, std::vector<int>>::const_iterator iter = sortMap.begin(); iter != sortMap.end(); ++iter)
   {
-    nex = iter->first;
+    nex                          = iter->first;
     std::vector<int> det_idx_old = iter->second;
     data.insert(data.end(), dataMap[nex].begin(), dataMap[nex].end());
     det_idx_order.insert(det_idx_order.end(), det_idx_old.begin(), det_idx_old.end());
@@ -114,12 +113,12 @@ void MultiDiracDeterminant::createDetData(const ci_configuration2& ref,
   for (int i = 0; i < nci; i++)
   {
     (*tmp_confgList)[i] = confgList[det_idx_order[i]];
-    sign[i] = tmp_sign[det_idx_order[i]];
+    sign[i]             = tmp_sign[det_idx_order[i]];
   }
   tmp_confgList.swap(ciConfigList);
 
   // update C2nodes for new det ordering
-  for (int i=0; i<C2nodes_ptcl.size(); i++)
+  for (int i = 0; i < C2nodes_ptcl.size(); i++)
     C2nodes_ptcl[i] = det_idx_reverse[C2nodes_ptcl[i]];
 
   /*
@@ -501,10 +500,10 @@ MultiDiracDeterminant::MultiDiracDeterminant(std::unique_ptr<SPOSet>&& spos, boo
 {
   (Phi->isOptimizable() == true) ? Optimizable = true : Optimizable = false;
 
-  ciConfigList = std::make_shared<std::vector<ci_configuration2>>();
-  detData      = std::make_shared<std::vector<int>>();
-  uniquePairs  = std::make_shared<std::vector<std::pair<int, int>>>();
-  DetSigns     = std::make_shared<std::vector<RealType>>();
+  ciConfigList     = std::make_shared<std::vector<ci_configuration2>>();
+  detData          = std::make_shared<std::vector<int>>();
+  uniquePairs      = std::make_shared<std::vector<std::pair<int, int>>>();
+  DetSigns         = std::make_shared<std::vector<RealType>>();
   ndet_per_exc_lvl = std::make_shared<std::vector<int>>();
 
   registerTimers();
