@@ -200,9 +200,10 @@ void SoaLocalizedBasisSet<COT, ORBT>::evaluateVGHGH(const ParticleSet& P, int ia
 
 template<class COT, typename ORBT>
 void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateV_mvp(const RefVectorWithLeader<const VirtualParticleSet>& vp_list,
-                                                       OffloadMWVArray& vals)
+                                                       OffloadMWVArray& vp_basis_v)
 {
-  const size_t nVPs = vals.size(0);
+  const size_t nVPs    = vp_basis_v.size(0);
+  const size_t nBasTot = vp_basis_v.size(1);
   const auto& IonID(ions_.GroupID);
 
   auto& vps_leader = vp_list.getLeader();
@@ -210,23 +211,18 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateV_mvp(const RefVectorWithLeader
 
   const auto dt_list(vps_leader.extractDTRefList_vp(vp_list, myTableIndex));
   const auto coordR_list(vps_leader.extractCoordsRefList_vp(vp_list));
-  std::vector<PosType> Tv_list;
+  std::vector<std::vector<PosType>> Tv_list;
+  std::vector<std::vector<PosType>> displ_list_tr;
+  Tv_list.resize(NumCenters);
+  // transpose vps/centers to pass one center at a time instead of striding through full
+  displ_list_tr.resize(NumCenters);
 
-  std::vector<DistanceTableAB::DisplRow> dist_list;
+  std::vector<DistanceTableAB::DisplRow> displ_list;
 
-  size_t index = 0;
+  size_t index = 0; // flattened (ragged) nw x nvp
   for (size_t iw = 0; iw < vp_list.size(); iw++)
     for (int iat = 0; iat < vp_list[iw].getTotalNum(); iat++)
     {
-      dist_list.push_back(dt_list[iw].getDisplRow(iat));
-      //index++;
-    }
-
-
-  for (size_t iw = 0; iw < vp_list.size(); iw++)
-    for (int iat = 0; iat < vp_list[iw].getTotalNum(); iat++)
-    {
-      const auto& dist  = dt_list[iw].getDistRow(iat);
       const auto& displ = dt_list[iw].getDisplRow(iat);
 
       PosType Tv;
@@ -235,12 +231,15 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateV_mvp(const RefVectorWithLeader
         Tv[0] = (ions_.R[c][0] - coordR_list[index][0]) - displ[c][0];
         Tv[1] = (ions_.R[c][1] - coordR_list[index][1]) - displ[c][1];
         Tv[2] = (ions_.R[c][2] - coordR_list[index][2]) - displ[c][2];
-
-        LOBasisSet[IonID[c]]->evaluateV(vp_list[iw].getLattice(), dist[c], displ[c],
-                                        vals.data_at(index, 0) + BasisOffset[c], Tv);
+        Tv_list[c].push_back(Tv);
+        displ_list_tr[c].push_back(displ[c]);
       }
       index++;
     }
+  // TODO: group/sort centers by species?
+  for (int c = 0; c < NumCenters; c++)
+    LOBasisSet[IonID[c]]->mw_evaluateV_mvp(vps_leader.getLattice(), vp_list, vp_basis_v.data_at(0, 0) + BasisOffset[c],
+                                           displ_list_tr[c].data(), Tv_list[c].data(), nVPs, nBasTot);
 }
 template<class COT, typename ORBT>
 void SoaLocalizedBasisSet<COT, ORBT>::evaluateV(const ParticleSet& P, int iat, ORBT* restrict vals)
@@ -272,9 +271,9 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateValue(const RefVectorWithLeader
 
 template<class COT, typename ORBT>
 void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateValue_mvp(const RefVectorWithLeader<const VirtualParticleSet>& vp_list,
-                                                           OffloadMWVArray& v)
+                                                           OffloadMWVArray& vp_basis_v)
 {
-  mw_evaluateV_mvp(vp_list, v);
+  mw_evaluateV_mvp(vp_list, vp_basis_v);
 }
 
 
