@@ -67,10 +67,10 @@ struct SoaSphericalTensor
   }
 
   ///compute Ylm
-  inline void mw_evaluateV(xyz_type* xyz, T* Ylm, size_t nr, size_t nlm) const
+  inline void mw_evaluateV(T* xyz, T* Ylm, size_t nr, size_t nlm) const
   {
     for (size_t ir = 0; ir < nr; ir++)
-      evaluate_bare(xyz[ir][0], xyz[ir][1], xyz[ir][2], Ylm + (ir * nlm));
+      evaluate_bare(xyz[0 + 3 * ir], xyz[1 + 3 * ir], xyz[2 + 3 * ir], Ylm + (ir * nlm));
     for (size_t ir = 0; ir < nr; ir++)
       for (int i = 0, nl = cYlm.size(); i < nl; i++)
         Ylm[ir * nlm + i] *= NormFactor[i];

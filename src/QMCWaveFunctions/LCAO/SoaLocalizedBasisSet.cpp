@@ -211,35 +211,32 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateV_mvp(const RefVectorWithLeader
 
   const auto dt_list(vps_leader.extractDTRefList_vp(vp_list, myTableIndex));
   const auto coordR_list(vps_leader.extractCoordsRefList_vp(vp_list));
-  std::vector<std::vector<PosType>> Tv_list;
-  std::vector<std::vector<PosType>> displ_list_tr;
-  Tv_list.resize(NumCenters);
-  // transpose vps/centers to pass one center at a time instead of striding through full
-  displ_list_tr.resize(NumCenters);
 
-  std::vector<DistanceTableAB::DisplRow> displ_list;
+  // make these shared resource? PinnedDualAllocator? OffloadPinnedAllocator?
+  Vector<RealType, OffloadPinnedAllocator<RealType>> Tv_list;
+  Vector<RealType, OffloadPinnedAllocator<RealType>> displ_list_tr;
+  Tv_list.resize(3 * NumCenters * nVPs);
+  displ_list_tr.resize(3 * NumCenters * nVPs);
 
   size_t index = 0; // flattened (ragged) nw x nvp
   for (size_t iw = 0; iw < vp_list.size(); iw++)
     for (int iat = 0; iat < vp_list[iw].getTotalNum(); iat++)
     {
       const auto& displ = dt_list[iw].getDisplRow(iat);
-
-      PosType Tv;
       for (int c = 0; c < NumCenters; c++)
       {
-        Tv[0] = (ions_.R[c][0] - coordR_list[index][0]) - displ[c][0];
-        Tv[1] = (ions_.R[c][1] - coordR_list[index][1]) - displ[c][1];
-        Tv[2] = (ions_.R[c][2] - coordR_list[index][2]) - displ[c][2];
-        Tv_list[c].push_back(Tv);
-        displ_list_tr[c].push_back(displ[c]);
+        for (size_t idim = 0; idim < 3; idim++)
+        {
+          Tv_list[idim + 3 * (index + c * nVPs)]       = (ions_.R[c][idim] - coordR_list[index][idim]) - displ[c][idim];
+          displ_list_tr[idim + 3 * (index + c * nVPs)] = displ[c][idim];
+        }
       }
       index++;
     }
   // TODO: group/sort centers by species?
   for (int c = 0; c < NumCenters; c++)
-    LOBasisSet[IonID[c]]->mw_evaluateV_mvp(vps_leader.getLattice(), vp_list, vp_basis_v.data_at(0, 0) + BasisOffset[c],
-                                           displ_list_tr[c].data(), Tv_list[c].data(), nVPs, nBasTot);
+    LOBasisSet[IonID[c]]->mw_evaluateV_mvp(vps_leader.getLattice(), vp_basis_v, displ_list_tr, Tv_list, nVPs, nBasTot,
+                                           c, BasisOffset[c], NumCenters);
 }
 template<class COT, typename ORBT>
 void SoaLocalizedBasisSet<COT, ORBT>::evaluateV(const ParticleSet& P, int iat, ORBT* restrict vals)
@@ -263,39 +260,10 @@ void SoaLocalizedBasisSet<COT, ORBT>::evaluateV(const ParticleSet& P, int iat, O
 template<class COT, typename ORBT>
 void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateValue(const RefVectorWithLeader<ParticleSet>& P_list,
                                                        int iat,
-                                                       OffloadMWVArray& basis_v_mw)
+                                                       OffloadMWVArray& v)
 {
-  // basis_v_mw: [NW][NumAO]
-  const size_t nBasTot = basis_v_mw.size(1);
-  auto& pset_leader    = P_list.getLeader();
-  const auto& IonID(ions_.GroupID);
-  std::vector<std::vector<PosType>> Tv_list;
-  std::vector<std::vector<PosType>> displ_list_tr;
-  Tv_list.resize(NumCenters);
-  displ_list_tr.resize(NumCenters);
-
-  //TODO: use ParticleSet RefList functions instead of doing one at a time inside iw loop
-  //const auto dt_list(pset_leader.extractDTRefList(P_list, myTableIndex));
-  //const auto coordR_list(pset_leader.extractCoordsRefList(P_list));
-
   for (size_t iw = 0; iw < P_list.size(); iw++)
-  {
-    const auto& d_table = P_list[iw].getDistTableAB(myTableIndex);
-    const auto& displ   = (P_list[iw].getActivePtcl() == iat) ? d_table.getTempDispls() : d_table.getDisplRow(iat);
-    const auto& coordR  = P_list[iw].activeR(iat);
-    PosType Tv;
-    for (int c = 0; c < NumCenters; c++)
-    {
-      Tv[0] = (ions_.R[c][0] - coordR[0]) - displ[c][0];
-      Tv[1] = (ions_.R[c][1] - coordR[1]) - displ[c][1];
-      Tv[2] = (ions_.R[c][2] - coordR[2]) - displ[c][2];
-      Tv_list[c].push_back(Tv);
-      displ_list_tr[c].push_back(displ[c]);
-    }
-  }
-  for (int c = 0; c < NumCenters; c++)
-    LOBasisSet[IonID[c]]->mw_evaluateV(pset_leader.getLattice(), basis_v_mw.data_at(0, 0) + BasisOffset[c],
-                                       displ_list_tr[c].data(), Tv_list[c].data(), P_list.size(), nBasTot);
+    evaluateV(P_list[iw], iat, v.data_at(iw, 0));
 }
 
 template<class COT, typename ORBT>

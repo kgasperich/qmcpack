@@ -658,137 +658,31 @@ struct SoaAtomicBasisSet
   }
 
 
-  template<typename LAT, typename PosType, typename VT>
-  inline void mw_evaluateV(const LAT& lattice,
-                           VT* restrict psi,
-                           PosType* displ_list,
-                           PosType* restrict Tv_list,
-                           const size_t nw,
-                           const size_t nBasTot)
-  {
-    /*
-      psi: pointer into [nw,nBastot] at [0,BasisOfset[current_center]]
-           stride by nBasTot for each walker
-    */
-    int TransX, TransY, TransZ;
-    int Nx   = PBCImages[0] + 1;
-    int Ny   = PBCImages[1] + 1;
-    int Nz   = PBCImages[2] + 1;
-    int Nyz  = Ny * Nz;
-    int Nxyz = Nx * Nyz;
-
-
-    // TODO: manage this better? set in builder?
-    // maybe just do one image at a time?
-    size_t tmpSize = std::max(Ylm.size(), RnlID.size());
-    tempS.resize(nw * Nxyz * tmpSize);
-
-    RealType* restrict ylm_v = tempS.data(0);
-    RealType* restrict phi_r = tempS.data(1);
-
-    std::vector<PosType> dr_new;
-    std::vector<RealType> r_new;
-    std::vector<PosType> dr_pbc;
-    std::vector<ValueType> correctphase;
-    dr_pbc.resize(Nxyz);
-    dr_new.resize(Nxyz * nw);
-    r_new.resize(Nxyz * nw);
-    correctphase.resize(nw);
-
-    // translation vectors over all images
-    // should just do this once and store it (like with phase)
-    for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
-    {
-      // is std::div any better than just % and / separately?
-      auto div_k  = std::div(i_xyz, Nz);
-      int k       = div_k.rem;
-      int ij      = div_k.quot;
-      auto div_ij = std::div(ij, Ny);
-      int j       = div_ij.rem;
-      int i       = div_ij.quot;
-      TransX      = ((i % 2) * 2 - 1) * ((i + 1) / 2);
-      TransY      = ((j % 2) * 2 - 1) * ((j + 1) / 2);
-      TransZ      = ((k % 2) * 2 - 1) * ((k + 1) / 2);
-      //TODO:
-      //  Trans = {TransX,Transy,TransZ};
-      //  dr_pbc[i_xyz] = dot(Trans, lattice.R);
-      dr_pbc[i_xyz][0] = (TransX * lattice.R(0, 0) + TransY * lattice.R(1, 0) + TransZ * lattice.R(2, 0));
-      dr_pbc[i_xyz][1] = (TransX * lattice.R(0, 1) + TransY * lattice.R(1, 1) + TransZ * lattice.R(2, 1));
-      dr_pbc[i_xyz][2] = (TransX * lattice.R(0, 2) + TransY * lattice.R(1, 2) + TransZ * lattice.R(2, 2));
-    }
-
-
-    size_t i_vp = 0;
-    for (size_t iw = 0; iw < nw; iw++)
-    {
-      // clear psi vals for this center
-      // TODO: should we transpose so we have a dense block here and then copy back strided into basis_v_mw?
-      for (size_t ib = 0; ib < BasisSetSize; ++ib)
-        psi[iw * nBasTot + ib] = 0;
-
-#if not defined(QMC_COMPLEX)
-      correctphase[iw] = 1.0;
-#else
-      RealType phasearg =
-          SuperTwist[0] * Tv_list[iw][0] + SuperTwist[1] * Tv_list[iw][1] + SuperTwist[2] * Tv_list[iw][2];
-      RealType s, c;
-      qmcplusplus::sincos(-phasearg, &s, &c);
-      correctphase[iw] = ValueType(c, s);
-#endif
-
-      for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
-      {
-        dr_new[i_xyz + Nxyz * iw][0] = -(displ_list[iw][0] + dr_pbc[i_xyz][0]);
-        dr_new[i_xyz + Nxyz * iw][1] = -(displ_list[iw][1] + dr_pbc[i_xyz][1]);
-        dr_new[i_xyz + Nxyz * iw][2] = -(displ_list[iw][2] + dr_pbc[i_xyz][2]);
-
-        r_new[i_xyz + Nxyz * iw] = std::sqrt(dot(dr_new[i_xyz + Nxyz * iw], dr_new[i_xyz + Nxyz * iw]));
-      }
-    }
-
-    // ylm_v and phi_r are nw * Nxyz * tmpSize
-    // tmpSize is max(Ylm.size(), RnlID.size())
-    MultiRnl.mw_evaluate(r_new.data(), phi_r, Nxyz * nw, tmpSize, Rmax);
-    // dr_new is [Nxyz * nw] postype
-    Ylm.mw_evaluateV(dr_new.data(), ylm_v, Nxyz * nw, tmpSize);
-    ///Phase for PBC containing the phase for the nearest image displacement and the correction due to the Distance table.
-
-    for (size_t iw = 0; iw < nw; iw++)
-    {
-      for (size_t i_xyz = 0; i_xyz < Nxyz; i_xyz++)
-      {
-        const ValueType Phase = periodic_image_phase_factors[i_xyz] * correctphase[iw];
-        for (size_t ib = 0; ib < BasisSetSize; ++ib)
-          psi[iw * nBasTot + ib] +=
-              ylm_v[(i_xyz + Nxyz * iw) * tmpSize + LM[ib]] * phi_r[(i_xyz + Nxyz * iw) * tmpSize + NL[ib]] * Phase;
-      }
-    }
-  }
-
-  template<typename LAT, typename PosType, typename VT>
+  template<typename LAT, typename VT>
   inline void mw_evaluateV_mvp(const LAT& lattice,
-                               const RefVectorWithLeader<const VirtualParticleSet>& vp_list,
-                               VT* restrict psi,
-                               PosType* displ_list,
-                               PosType* restrict Tv_list,
+                               Array<VT, 2, OffloadPinnedAllocator<VT>>& psi,
+                               const Vector<RealType, OffloadPinnedAllocator<RealType>>& displ_list,
+                               const Vector<RealType, OffloadPinnedAllocator<RealType>>& Tv_list,
                                const size_t nVPs,
-                               const size_t nBasTot)
+                               const size_t nBasTot,
+                               const size_t c,
+                               const size_t BasisOffset,
+                               const size_t NumCenters)
   {
     /*
-      vp_list[nw,nvp]
-      vp_basis_v[nw/nvp,nao]
-      displ_list[nw/nvp,xyz]
-      Tv_list[nw/nvp,xyz] 
-
-        images
-          walkers/VPs
+      psi [nVPs, nBasTot] (start at [0, BasisOffset])
+      displ_list [3 * nVPs * NumCenters] (start at [3*nVPs*c])
+      Tv_list [3 * nVPs * NumCenters]
     */
+    //TODO: use QMCTraits::DIM instead of 3?
     int TransX, TransY, TransZ;
     int Nx   = PBCImages[0] + 1;
     int Ny   = PBCImages[1] + 1;
     int Nz   = PBCImages[2] + 1;
     int Nyz  = Ny * Nz;
     int Nxyz = Nx * Nyz;
+    assert(psi.size(0) == nVPs);
+    assert(psi.size(1) == nBasTot);
 
 
     // TODO: manage this better? set in builder?
@@ -799,12 +693,13 @@ struct SoaAtomicBasisSet
     RealType* restrict ylm_v = tempS.data(0);
     RealType* restrict phi_r = tempS.data(1);
 
-    std::vector<PosType> dr_new;
+    Vector<RealType, OffloadPinnedAllocator<RealType>> dr_new;
+
     std::vector<RealType> r_new;
-    std::vector<PosType> dr_pbc;
+    std::vector<RealType> dr_pbc;
     std::vector<ValueType> correctphase;
-    dr_pbc.resize(Nxyz);
-    dr_new.resize(Nxyz * nVPs);
+    dr_pbc.resize(3 * Nxyz);
+    dr_new.resize(3 * Nxyz * nVPs);
     r_new.resize(Nxyz * nVPs);
     correctphase.resize(nVPs);
 
@@ -824,48 +719,48 @@ struct SoaAtomicBasisSet
       //TODO:
       //  Trans = {TransX,Transy,TransZ};
       //  dr_pbc[i_xyz] = dot(Trans, lattice.R);
-      dr_pbc[i_xyz][0] = (TransX * lattice.R(0, 0) + TransY * lattice.R(1, 0) + TransZ * lattice.R(2, 0));
-      dr_pbc[i_xyz][1] = (TransX * lattice.R(0, 1) + TransY * lattice.R(1, 1) + TransZ * lattice.R(2, 1));
-      dr_pbc[i_xyz][2] = (TransX * lattice.R(0, 2) + TransY * lattice.R(1, 2) + TransZ * lattice.R(2, 2));
+      for (size_t i_dim = 0; i_dim < 3; i_dim++)
+        dr_pbc[i_dim + 3 * i_xyz] =
+            (TransX * lattice.R(0, i_dim) + TransY * lattice.R(1, i_dim) + TransZ * lattice.R(2, i_dim));
     }
 
 
-    size_t i_vp = 0;
-    for (size_t iw = 0; iw < vp_list.size(); iw++)
+    for (size_t i_vp = 0; i_vp < nVPs; i_vp++)
     {
-      for (size_t iat = 0; iat < vp_list[iw].getTotalNum(); iat++)
-      {
-        // clear psi vals for this center
-        // TODO: should we transpose so we have a dense block here and then copy back strided into vp_basis_v_mw?
-        for (size_t ib = 0; ib < BasisSetSize; ++ib)
-          psi[i_vp * nBasTot + ib] = 0;
+      // clear psi vals for this center
+      // TODO: should we transpose so we have a dense block here and then copy back strided into vp_basis_v_mw?
+      for (size_t ib = 0; ib < BasisSetSize; ++ib)
+        psi(i_vp, BasisOffset + ib) = 0;
 
 #if not defined(QMC_COMPLEX)
-        correctphase[i_vp] = 1.0;
+      correctphase[i_vp] = 1.0;
 #else
-        RealType phasearg =
-            SuperTwist[0] * Tv_list[i_vp][0] + SuperTwist[1] * Tv_list[i_vp][1] + SuperTwist[2] * Tv_list[i_vp][2];
-        RealType s, c;
-        qmcplusplus::sincos(-phasearg, &s, &c);
-        correctphase[i_vp] = ValueType(c, s);
+      //RealType phasearg = dot(3, SuperTwist.data(), 1, Tv_list.data() + 3 * i_vp, 1);
+      RealType phasearg = 0;
+      for (size_t i_dim = 0; i_dim < 3; i_dim++)
+        phasearg += SuperTwist[i_dim] * Tv_list[i_dim + 3 * i_vp];
+      RealType s, c;
+      qmcplusplus::sincos(-phasearg, &s, &c);
+      correctphase[i_vp] = ValueType(c, s);
 #endif
 
-        for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
+      for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
+      {
+        RealType tmp_r2 = 0.0;
+        for (size_t i_dim = 0; i_dim < 3; i_dim++)
         {
-          dr_new[i_xyz + Nxyz * i_vp][0] = -(displ_list[i_vp][0] + dr_pbc[i_xyz][0]);
-          dr_new[i_xyz + Nxyz * i_vp][1] = -(displ_list[i_vp][1] + dr_pbc[i_xyz][1]);
-          dr_new[i_xyz + Nxyz * i_vp][2] = -(displ_list[i_vp][2] + dr_pbc[i_xyz][2]);
-
-          r_new[i_xyz + Nxyz * i_vp] = std::sqrt(dot(dr_new[i_xyz + Nxyz * i_vp], dr_new[i_xyz + Nxyz * i_vp]));
+          dr_new[i_dim + 3 * (i_xyz + Nxyz * i_vp)] =
+              -(displ_list[i_dim + 3 * (i_vp + c * nVPs)] + dr_pbc[i_dim + 3 * i_xyz]);
+          tmp_r2 += dr_new[i_dim + 3 * (i_xyz + Nxyz * i_vp)] * dr_new[i_dim + 3 * (i_xyz + Nxyz * i_vp)];
         }
-        i_vp++;
+        r_new[i_xyz + Nxyz * i_vp] = std::sqrt(tmp_r2);
       }
     }
 
     // ylm_v and phi_r are nVPs * Nxyz * tmpSize
     // tmpSize is max(Ylm.size(), RnlID.size())
     MultiRnl.mw_evaluate(r_new.data(), phi_r, Nxyz * nVPs, tmpSize, Rmax);
-    // dr_new is [Nxyz * nVPs] postype
+    // dr_new is [3 * Nxyz * nVPs] realtype
     Ylm.mw_evaluateV(dr_new.data(), ylm_v, Nxyz * nVPs, tmpSize);
     ///Phase for PBC containing the phase for the nearest image displacement and the correction due to the Distance table.
 
@@ -875,7 +770,7 @@ struct SoaAtomicBasisSet
       {
         const ValueType Phase = periodic_image_phase_factors[i_xyz] * correctphase[i_vp];
         for (size_t ib = 0; ib < BasisSetSize; ++ib)
-          psi[i_vp * nBasTot + ib] +=
+          psi(i_vp, BasisOffset + ib) +=
               ylm_v[(i_xyz + Nxyz * i_vp) * tmpSize + LM[ib]] * phi_r[(i_xyz + Nxyz * i_vp) * tmpSize + NL[ib]] * Phase;
       }
     }

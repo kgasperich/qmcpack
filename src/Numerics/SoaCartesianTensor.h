@@ -78,10 +78,10 @@ struct SoaCartesianTensor
   ///compute Ylm
   inline void evaluateV(T x, T y, T z) { evaluateV(x, y, z, cXYZ.data(0)); }
 
-  inline void mw_evaluateV(xyz_type* xyz, T* XYZ, size_t nr, size_t nlm) const
+  inline void mw_evaluateV(T* xyz, T* XYZ, size_t nr, size_t nlm) const
   {
     for (size_t ir = 0; ir < nr; ir++)
-      evaluate_bare(xyz[ir][0], xyz[ir][1], xyz[ir][2], XYZ + (ir * nlm));
+      evaluate_bare(xyz[0 + 3 * ir], xyz[1 + 3 * ir], xyz[2 + 3 * ir], XYZ + (ir * nlm));
     for (size_t ir = 0; ir < nr; ir++)
       for (int i = 0, nl = cXYZ.size(); i < nl; i++)
         XYZ[ir * nlm + i] *= NormFactor[i];
