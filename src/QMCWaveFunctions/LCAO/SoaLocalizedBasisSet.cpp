@@ -233,10 +233,24 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateV_mvp(const RefVectorWithLeader
       }
       index++;
     }
+
+#if defined(QMC_COMPLEX)
+  Tv_list.updateTo();
+#endif
+  displ_list_tr.updateTo();
+
+  auto* vp_basis_v_devptr = vp_basis_v.device_data();
+  PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) is_device_ptr(vp_basis_v_devptr) ")
+  for (size_t i_vp = 0; i_vp < nVPs; i_vp++)
+    for (size_t ib = 0; ib < BasisSetSize; ++ib)
+      vp_basis_v_devptr[ib + i_vp * nBasTot] = 0;
+
   // TODO: group/sort centers by species?
   for (int c = 0; c < NumCenters; c++)
     LOBasisSet[IonID[c]]->mw_evaluateV(vps_leader.getLattice(), vp_basis_v, displ_list_tr, Tv_list, nVPs, nBasTot, c,
                                        BasisOffset[c], NumCenters);
+  vp_basis_v.updateFrom();
+
 }
 template<class COT, typename ORBT>
 void SoaLocalizedBasisSet<COT, ORBT>::evaluateV(const ParticleSet& P, int iat, ORBT* restrict vals)
