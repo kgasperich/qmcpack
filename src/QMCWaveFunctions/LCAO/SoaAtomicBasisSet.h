@@ -659,20 +659,20 @@ struct SoaAtomicBasisSet
 
 
   template<typename LAT, typename VT>
-  inline void mw_evaluateV_mvp(const LAT& lattice,
-                               Array<VT, 2, OffloadPinnedAllocator<VT>>& psi,
-                               const Vector<RealType, OffloadPinnedAllocator<RealType>>& displ_list,
-                               const Vector<RealType, OffloadPinnedAllocator<RealType>>& Tv_list,
-                               const size_t nVPs,
-                               const size_t nBasTot,
-                               const size_t c,
-                               const size_t BasisOffset,
-                               const size_t NumCenters)
+  inline void mw_evaluateV(const LAT& lattice,
+                           Array<VT, 2, OffloadPinnedAllocator<VT>>& psi,
+                           const Vector<RealType, OffloadPinnedAllocator<RealType>>& displ_list,
+                           const Vector<RealType, OffloadPinnedAllocator<RealType>>& Tv_list,
+                           const size_t nElec,
+                           const size_t nBasTot,
+                           const size_t c,
+                           const size_t BasisOffset,
+                           const size_t NumCenters)
   {
     /*
-      psi [nVPs, nBasTot] (start at [0, BasisOffset])
-      displ_list [3 * nVPs * NumCenters] (start at [3*nVPs*c])
-      Tv_list [3 * nVPs * NumCenters]
+      psi [nElec, nBasTot] (start at [0, BasisOffset])
+      displ_list [3 * nElec * NumCenters] (start at [3*nElec*c])
+      Tv_list [3 * nElec * NumCenters]
     */
     //TODO: use QMCTraits::DIM instead of 3?
     int TransX, TransY, TransZ;
@@ -681,14 +681,14 @@ struct SoaAtomicBasisSet
     int Nz   = PBCImages[2] + 1;
     int Nyz  = Ny * Nz;
     int Nxyz = Nx * Nyz;
-    assert(psi.size(0) == nVPs);
+    assert(psi.size(0) == nElec);
     assert(psi.size(1) == nBasTot);
 
 
     // TODO: manage this better? set in builder?
     // maybe just do one image at a time?
     size_t tmpSize = std::max(Ylm.size(), RnlID.size());
-    tempS.resize(nVPs * Nxyz * tmpSize);
+    tempS.resize(nElec * Nxyz * tmpSize);
 
     RealType* restrict ylm_v = tempS.data(0);
     RealType* restrict phi_r = tempS.data(1);
@@ -699,9 +699,9 @@ struct SoaAtomicBasisSet
     std::vector<RealType> dr_pbc;
     std::vector<ValueType> correctphase;
     dr_pbc.resize(3 * Nxyz);
-    dr_new.resize(3 * Nxyz * nVPs);
-    r_new.resize(Nxyz * nVPs);
-    correctphase.resize(nVPs);
+    dr_new.resize(3 * Nxyz * nElec);
+    r_new.resize(Nxyz * nElec);
+    correctphase.resize(nElec);
 
     // should just do this once and store it (like with phase)
     for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
@@ -725,7 +725,7 @@ struct SoaAtomicBasisSet
     }
 
 
-    for (size_t i_vp = 0; i_vp < nVPs; i_vp++)
+    for (size_t i_vp = 0; i_vp < nElec; i_vp++)
     {
       // clear psi vals for this center
       // TODO: should we transpose so we have a dense block here and then copy back strided into vp_basis_v_mw?
@@ -750,21 +750,21 @@ struct SoaAtomicBasisSet
         for (size_t i_dim = 0; i_dim < 3; i_dim++)
         {
           dr_new[i_dim + 3 * (i_xyz + Nxyz * i_vp)] =
-              -(displ_list[i_dim + 3 * (i_vp + c * nVPs)] + dr_pbc[i_dim + 3 * i_xyz]);
+              -(displ_list[i_dim + 3 * (i_vp + c * nElec)] + dr_pbc[i_dim + 3 * i_xyz]);
           tmp_r2 += dr_new[i_dim + 3 * (i_xyz + Nxyz * i_vp)] * dr_new[i_dim + 3 * (i_xyz + Nxyz * i_vp)];
         }
         r_new[i_xyz + Nxyz * i_vp] = std::sqrt(tmp_r2);
       }
     }
 
-    // ylm_v and phi_r are nVPs * Nxyz * tmpSize
+    // ylm_v and phi_r are nElec * Nxyz * tmpSize
     // tmpSize is max(Ylm.size(), RnlID.size())
-    MultiRnl.mw_evaluate(r_new.data(), phi_r, Nxyz * nVPs, tmpSize, Rmax);
-    // dr_new is [3 * Nxyz * nVPs] realtype
-    Ylm.mw_evaluateV(dr_new.data(), ylm_v, Nxyz * nVPs, tmpSize);
+    MultiRnl.mw_evaluate(r_new.data(), phi_r, Nxyz * nElec, tmpSize, Rmax);
+    // dr_new is [3 * Nxyz * nElec] realtype
+    Ylm.mw_evaluateV(dr_new.data(), ylm_v, Nxyz * nElec, tmpSize);
     ///Phase for PBC containing the phase for the nearest image displacement and the correction due to the Distance table.
 
-    for (size_t i_vp = 0; i_vp < nVPs; i_vp++)
+    for (size_t i_vp = 0; i_vp < nElec; i_vp++)
     {
       for (size_t i_xyz = 0; i_xyz < Nxyz; i_xyz++)
       {

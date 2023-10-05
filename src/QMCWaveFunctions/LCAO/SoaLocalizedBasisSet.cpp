@@ -235,8 +235,8 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateV_mvp(const RefVectorWithLeader
     }
   // TODO: group/sort centers by species?
   for (int c = 0; c < NumCenters; c++)
-    LOBasisSet[IonID[c]]->mw_evaluateV_mvp(vps_leader.getLattice(), vp_basis_v, displ_list_tr, Tv_list, nVPs, nBasTot,
-                                           c, BasisOffset[c], NumCenters);
+    LOBasisSet[IonID[c]]->mw_evaluateV(vps_leader.getLattice(), vp_basis_v, displ_list_tr, Tv_list, nVPs, nBasTot, c,
+                                       BasisOffset[c], NumCenters);
 }
 template<class COT, typename ORBT>
 void SoaLocalizedBasisSet<COT, ORBT>::evaluateV(const ParticleSet& P, int iat, ORBT* restrict vals)
