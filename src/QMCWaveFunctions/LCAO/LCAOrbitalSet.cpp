@@ -109,13 +109,18 @@ void LCAOrbitalSet::checkObject() const
 
 void LCAOrbitalSet::createResource(ResourceCollection& collection) const
 {
+  myBasisSet->createResource(collection);
+
   auto resource_index = collection.addResource(std::make_unique<LCAOMultiWalkerMem>());
 }
 
 void LCAOrbitalSet::acquireResource(ResourceCollection& collection, const RefVectorWithLeader<SPOSet>& spo_list) const
 {
   assert(this == &spo_list.getLeader());
-  auto& spo_leader          = spo_list.getCastedLeader<LCAOrbitalSet>();
+  auto& spo_leader = spo_list.getCastedLeader<LCAOrbitalSet>();
+
+  spo_leader.myBasisSet->acquireResource(collection, extractBasRefList(spo_list));
+
   spo_leader.mw_mem_handle_ = collection.lendResource<LCAOMultiWalkerMem>();
 }
 
@@ -123,11 +128,14 @@ void LCAOrbitalSet::releaseResource(ResourceCollection& collection, const RefVec
 {
   assert(this == &spo_list.getLeader());
   auto& spo_leader = spo_list.getCastedLeader<LCAOrbitalSet>();
+
+  spo_leader.myBasisSet->releaseResource(collection, extractBasRefList(spo_list));
+
   collection.takebackResource(spo_leader.mw_mem_handle_);
 }
 
 RefVectorWithLeader<typename LCAOrbitalSet::basis_type> LCAOrbitalSet::extractBasRefList(
-    const RefVectorWithLeader<SPOSet>& spo_list)
+    const RefVectorWithLeader<SPOSet>& spo_list) const
 {
   auto& spo_leader = spo_list.getCastedLeader<LCAOrbitalSet>();
   RefVectorWithLeader<basis_type> bas_list(*spo_leader.myBasisSet);

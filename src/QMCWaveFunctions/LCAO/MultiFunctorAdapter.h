@@ -31,9 +31,11 @@ namespace qmcplusplus
 template<typename FN>
 struct MultiFunctorAdapter
 {
-  using RealType    = typename FN::real_type;
-  using GridType    = LogGridLight<RealType>;
-  using single_type = FN;
+  using RealType      = typename FN::real_type;
+  using GridType      = LogGridLight<RealType>;
+  using single_type   = FN;
+  using OffloadArray2 = Array<RealType, 2, OffloadPinnedAllocator<RealType>>;
+  using OffloadArray3 = Array<RealType, 3, OffloadPinnedAllocator<RealType>>;
   aligned_vector<std::unique_ptr<single_type>> Rnl;
 
   MultiFunctorAdapter() = default;
@@ -77,7 +79,35 @@ struct MultiFunctorAdapter
       }
     }
   }
+  inline void batched_evaluate(OffloadArray2& r, OffloadArray3& u, RealType Rmax) const
+  {
+    const size_t nElec = r.size(0);
+    const size_t Nxyz  = r.size(1); // number of PBC images
+    assert(nElec == u.size(0));
+    assert(Nxyz == u.size(1));
+    const size_t nRnl = u.size(2);    // number of splines
+    const size_t nR   = nElec * Nxyz; // total number of positions to evaluate
 
+    auto* r_ptr = r.data();
+    auto* u_ptr = u.data();
+
+
+    for (size_t ir = 0; ir < nR; ir++)
+    {
+      if (r_ptr[ir] >= Rmax)
+      {
+        for (size_t i = 0, n = Rnl.size(); i < n; ++i)
+          u_ptr[ir * nRnl + i] = 0.0;
+      }
+      else
+      {
+        for (size_t i = 0, n = Rnl.size(); i < n; ++i)
+          u_ptr[ir * nRnl + i] = Rnl[i]->f(r_ptr[ir]);
+      }
+    }
+
+    u.updateTo();
+  }
   inline void evaluate(RealType r, RealType* restrict u, RealType* restrict du, RealType* restrict d2u)
   {
     const RealType rinv = RealType(1) / r;

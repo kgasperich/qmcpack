@@ -357,8 +357,8 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateV_mvp2(const RefVectorWithLeade
   for (int c = 0; c < NumCenters; c++)
   {
     auto atom_bs_list = extractLOBasisRefList(bs_list, IonID[c]);
-    LOBasisSet[IonID[c]]->mw_evaluateV(atom_bs_list, vps_leader.getLattice(), vp_basis_v, displ_list_tr, Tv_list, nVPs,
-                                       nBasTot, c, BasisOffset[c], NumCenters);
+    LOBasisSet[IonID[c]]->mw_evaluateV2(atom_bs_list, vps_leader.getLattice(), vp_basis_v, displ_list_tr, Tv_list, nVPs,
+                                        nBasTot, c, BasisOffset[c], NumCenters);
     // LOBasisSet[IonID[c]]->mw_evaluateV(vps_leader.getLattice(), vp_basis_v, displ_list_tr, Tv_list, nVPs, nBasTot, c,
     //  BasisOffset[c], NumCenters);
   }

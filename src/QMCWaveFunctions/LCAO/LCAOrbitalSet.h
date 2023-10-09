@@ -309,7 +309,7 @@ private:
                                    const RefVectorWithLeader<const VirtualParticleSet>& vp_list,
                                    OffloadMWVArray& phi_v) const;
 
-  RefVectorWithLeader<basis_type> extractBasRefList(const RefVectorWithLeader<SPOSet>& spo_list);
+  RefVectorWithLeader<basis_type> extractBasRefList(const RefVectorWithLeader<SPOSet>& spo_list) const;
   struct LCAOMultiWalkerMem;
   ResourceHandle<LCAOMultiWalkerMem> mw_mem_handle_;
   /// timer for basis set

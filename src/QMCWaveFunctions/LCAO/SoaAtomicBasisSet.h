@@ -30,10 +30,15 @@ namespace qmcplusplus
 template<typename ROT, typename SH>
 struct SoaAtomicBasisSet
 {
-  using RadialOrbital_t = ROT;
-  using RealType        = typename ROT::RealType;
-  using GridType        = typename ROT::GridType;
-  using ValueType       = typename QMCTraits::ValueType;
+  using RadialOrbital_t         = ROT;
+  using RealType                = typename ROT::RealType;
+  using GridType                = typename ROT::GridType;
+  using ValueType               = typename QMCTraits::ValueType;
+  using OffloadNelecVGLPBCArray = Array<ValueType, 4, OffloadPinnedAllocator<ValueType>>; // [VGL, elec, PBC, Rnl/Ylm]
+  using OffloadNelecVPBCArray   = Array<ValueType, 3, OffloadPinnedAllocator<ValueType>>; // [elec, PBC, Rnl/Ylm/xyz]
+  using OffloadNelecPBCArray    = Array<ValueType, 2, OffloadPinnedAllocator<ValueType>>; // [elec, PBC]
+  using OffloadRPBCArray        = Array<ValueType, 2, OffloadPinnedAllocator<ValueType>>; // [xyz, PBC]
+  using OffloadVector           = Vector<ValueType, OffloadPinnedAllocator<ValueType>>;
 
   ///size of the basis set
   int BasisSetSize;
@@ -60,6 +65,11 @@ struct SoaAtomicBasisSet
   VectorSoaContainer<RealType, 4, OffloadPinnedAllocator<RealType>> tempS;
   NewTimer& ylm_timer_;
   NewTimer& rnl_timer_;
+  struct SoaAtomicBSetMultiWalkerMem;
+  ResourceHandle<SoaAtomicBSetMultiWalkerMem> mw_mem_handle_;
+  // void createResource(ResourceCollection& collection) const;
+  // void acquireResource(ResourceCollection& collection, const RefVectorWithLeader<SoaAtomicBasisSet>& atom_bs_list) const;
+  // void releaseResource(ResourceCollection& collection, const RefVectorWithLeader<SoaAtomicBasisSet>& atom_bs_list) const;
 
   ///the constructor
   explicit SoaAtomicBasisSet(int lmax, bool addsignforM = false)
@@ -850,16 +860,16 @@ struct SoaAtomicBasisSet
 
 
   template<typename LAT, typename VT>
-  inline void mw_evaluateV(const RefVectorWithLeader<SoaAtomicBasisSet>& atom_bs_list,
-                           const LAT& lattice,
-                           Array<VT, 2, OffloadPinnedAllocator<VT>>& psi,
-                           const Vector<RealType, OffloadPinnedAllocator<RealType>>& displ_list,
-                           const Vector<RealType, OffloadPinnedAllocator<RealType>>& Tv_list,
-                           const size_t nElec,
-                           const size_t nBasTot,
-                           const size_t c,
-                           const size_t BasisOffset,
-                           const size_t NumCenters)
+  inline void mw_evaluateV2(const RefVectorWithLeader<SoaAtomicBasisSet>& atom_bs_list,
+                            const LAT& lattice,
+                            Array<VT, 2, OffloadPinnedAllocator<VT>>& psi,
+                            const Vector<RealType, OffloadPinnedAllocator<RealType>>& displ_list,
+                            const Vector<RealType, OffloadPinnedAllocator<RealType>>& Tv_list,
+                            const size_t nElec,
+                            const size_t nBasTot,
+                            const size_t c,
+                            const size_t BasisOffset,
+                            const size_t NumCenters)
   {
     assert(this == &atom_bs_list.getLeader());
     auto& atom_bs_leader = atom_bs_list.template getCastedLeader<SoaAtomicBasisSet<ROT, SH>>();
@@ -878,26 +888,34 @@ struct SoaAtomicBasisSet
     assert(psi.size(1) == nBasTot);
 
 
-    Vector<RealType, OffloadPinnedAllocator<RealType>> dr_new;
+    auto& ylm_v = atom_bs_leader.mw_mem_handle_.getResource().ylm_v;
+    auto& rnl_v = atom_bs_leader.mw_mem_handle_.getResource().rnl_v;
+    auto& dr    = atom_bs_leader.mw_mem_handle_.getResource().dr;
+    auto& r     = atom_bs_leader.mw_mem_handle_.getResource().r;
 
-    Vector<RealType, OffloadPinnedAllocator<RealType>> r_new;
-    Vector<RealType, OffloadPinnedAllocator<RealType>> dr_pbc;
-    Vector<ValueType, OffloadPinnedAllocator<ValueType>> correctphase;
+    size_t nRnl = RnlID.size();
+    size_t nYlm = Ylm.size();
 
-    dr_pbc.resize(3 * Nxyz);
-    dr_new.resize(3 * Nxyz * nElec);
-    r_new.resize(Nxyz * nElec);
+    ylm_v.resize(nElec, Nxyz, nYlm);
+    rnl_v.resize(nElec, Nxyz, nRnl);
+    dr.resize(nElec, Nxyz, 3);
+    r.resize(nElec, Nxyz);
+
+    // TODO: move these outside?
+    auto& dr_pbc       = atom_bs_leader.mw_mem_handle_.getResource().dr_pbc;
+    auto& correctphase = atom_bs_leader.mw_mem_handle_.getResource().correctphase;
+    dr_pbc.resize(Nxyz, 3);
     correctphase.resize(nElec);
 
 
     auto* dr_pbc_ptr    = dr_pbc.data();
     auto* dr_pbc_devptr = dr_pbc.device_data();
 
-    auto* dr_new_ptr    = dr_new.data();
-    auto* dr_new_devptr = dr_new.device_data();
+    auto* dr_new_ptr    = dr.data();
+    auto* dr_new_devptr = dr.device_data();
 
-    auto* r_new_ptr    = r_new.data();
-    auto* r_new_devptr = r_new.device_data();
+    auto* r_new_ptr    = r.data();
+    auto* r_new_devptr = r.device_data();
 
     // how to map Tensor<T,3> to device?
     auto* latR_ptr = lattice.R.data();
@@ -977,41 +995,53 @@ struct SoaAtomicBasisSet
     }
 
     // TODO: remove this when Rnl/Ylm offloaded
-    r_new.updateFrom();
-    dr_new.updateFrom();
+    // r.updateFrom();
+    // dr.updateFrom();
     // TODO: manage this better? set in builder?
     // maybe just do one image at a time?
-    size_t tmpSize = std::max(Ylm.size(), RnlID.size());
-    tempS.resize(nElec * Nxyz * tmpSize);
+    // size_t tmpSize = std::max(Ylm.size(), RnlID.size());
+    // tempS.resize(nElec * Nxyz * tmpSize);
 
-    RealType* restrict ylm_v = tempS.data(0);
-    RealType* restrict phi_r = tempS.data(1);
+    // RealType* restrict ylm_v = tempS.data(0);
+    // RealType* restrict phi_r = tempS.data(1);
 
-    auto* ylm_devptr = tempS.device_data(0);
-    auto* rnl_devptr = tempS.device_data(1);
+    // auto* ylm_devptr = tempS.device_data(0);
+    // auto* rnl_devptr = tempS.device_data(1);
 
 
     // ylm_v and phi_r are nElec * Nxyz * tmpSize
     // tmpSize is max(Ylm.size(), RnlID.size())
     {
       ScopedTimer local(rnl_timer_);
-      MultiRnl.mw_evaluate(r_new.data(), phi_r, Nxyz * nElec, tmpSize, Rmax);
+      //MultiRnl.mw_evaluate(r.data(), rnl_v.data(), Nxyz * nElec, nRnl, Rmax);
+      MultiRnl.batched_evaluate(r, rnl_v, Rmax);
+
+      // serial?
+      // for (size_t i_r = 0; i_r < Nxyz * NElec; i_r++)
+      // {
+      //   MultiRnl.evaluate_single_offload()
+      // }
     }
     // dr_new is [3 * Nxyz * nElec] realtype
     {
       ScopedTimer local(ylm_timer_);
-      Ylm.mw_evaluateV(dr_new.data(), ylm_v, Nxyz * nElec, tmpSize);
+      //Ylm.mw_evaluateV(dr.data(), ylm_v.data(), Nxyz * nElec, nYlm);
+      Ylm.batched_evaluateV(dr, ylm_v);
     }
     ///Phase for PBC containing the phase for the nearest image displacement and the correction due to the Distance table.
 
     //TODO: remove this when Ylm/MultiRnl mw_evaluateV are offloaded
-    tempS.updateTo();
+    // tempS.updateTo();
+    // ylm_v.updateTo();
+    // rnl_v.updateTo();
 
     auto* phase_fac_ptr = periodic_image_phase_factors.data();
     auto* LM_ptr        = LM.data();
     auto* NL_ptr        = NL.data();
     auto* psi_ptr       = psi.data();
 
+    auto* ylm_devptr = ylm_v.device_data();
+    auto* rnl_devptr = rnl_v.device_data();
 
     PRAGMA_OFFLOAD(
         "omp target teams distribute parallel for collapse(2) map(always, to:phase_fac_ptr[:Nxyz], LM_ptr[:BasisSetSize], NL_ptr[:BasisSetSize]) \
@@ -1023,8 +1053,8 @@ struct SoaAtomicBasisSet
         for (size_t i_xyz = 0; i_xyz < Nxyz; i_xyz++)
         {
           const ValueType Phase = phase_fac_ptr[i_xyz] * correctphase_devptr[i_vp];
-          psi_devptr[BasisOffset + ib + i_vp * nBasTot] += ylm_devptr[(i_xyz + Nxyz * i_vp) * tmpSize + LM_ptr[ib]] *
-              rnl_devptr[(i_xyz + Nxyz * i_vp) * tmpSize + NL_ptr[ib]] * Phase;
+          psi_devptr[BasisOffset + ib + i_vp * nBasTot] += ylm_devptr[(i_xyz + Nxyz * i_vp) * nYlm + LM_ptr[ib]] *
+              rnl_devptr[(i_xyz + Nxyz * i_vp) * nRnl + NL_ptr[ib]] * Phase;
           //const ValueType Phase = periodic_image_phase_factors[i_xyz] * correctphase[i_vp];
           //psi(i_vp, BasisOffset + ib) +=
           //psi_ptr[BasisOffset + ib + i_vp*nBasTot] +=
@@ -1035,11 +1065,10 @@ struct SoaAtomicBasisSet
   }
 
 
-  struct SoaAtomicBSetMultiWalkerMem;
-  ResourceHandle<SoaAtomicBSetMultiWalkerMem> mw_mem_handle_;
-
   void createResource(ResourceCollection& collection) const
   {
+    // Ylm.createResource(collection);
+    // MultiRnl.createResource(collection);
     auto resource_index = collection.addResource(std::make_unique<SoaAtomicBSetMultiWalkerMem>());
   }
 
@@ -1050,6 +1079,7 @@ struct SoaAtomicBasisSet
     // auto& atom_bs_leader          = atom_bs_list.getCastedLeader();
     // SoaAtomicBasisSet& atom_bs_leader          = atom_bs_list.getCastedLeader();
     // const SoaAtomicBasisSet& atom_bs_leader          = atom_bs_list.getCastedLeader();
+    // const auto ylm_list(extractYlmRefList(atom_bs_list));
     auto& atom_bs_leader          = atom_bs_list.template getCastedLeader<SoaAtomicBasisSet>();
     atom_bs_leader.mw_mem_handle_ = collection.lendResource<SoaAtomicBSetMultiWalkerMem>();
   }
@@ -1074,26 +1104,15 @@ struct SoaAtomicBasisSet
       return std::make_unique<SoaAtomicBSetMultiWalkerMem>(*this);
     }
 
-    // OffloadMWVGLArray phi_vgl_v;    // [5][NW][NumMO]
-    // OffloadMWVGLArray basis_vgl_mw; // [5][NW][NumAO]
-    // OffloadMWVArray phi_v;          // [NW][NumMO]
-    // OffloadMWVArray basis_v_mw;     // [NW][NumAO]
-    // OffloadMWVArray vp_phi_v;       // [NVPs][NumMO]
-    // OffloadMWVArray vp_basis_v_mw;  // [NVPs][NumAO]
+    OffloadNelecVPBCArray ylm_v;     // [Nelec][PBC][NYlm]
+    OffloadNelecVPBCArray rnl_v;     // [Nelec][PBC][NRnl]
+    OffloadNelecVGLPBCArray ylm_vgl; // [5][Nelec][PBC][NYlm]
+    OffloadNelecVGLPBCArray rnl_vgl; // [5][Nelec][PBC][NRnl]
+    OffloadRPBCArray dr_pbc;         // [PBC][xyz]
+    OffloadNelecVPBCArray dr;        // [Nelec][PBC][xyz]
+    OffloadNelecPBCArray r;          // [Nelec][PBC]
+    OffloadVector correctphase;      // [Nelec]
   };
 };
-// template<typename ROT, typename SH>
-// void SoaAtomicBasisSet<ROT, SH>::acquireResource(ResourceCollection& collection, const RefVectorWithLeader<SoaAtomicBasisSet<ROT,SH>>& atom_bs_list) const
-//   {
-//     assert(this == &atom_bs_list.getLeader());
-//     auto& atom_bs_leader          = atom_bs_list.template getCastedLeader<SoaAtomicBasisSet<ROT,SH>>();
-//     // auto& atom_bs_leader          = atom_bs_list.getCastedLeader<SoaAtomicBasisSet>();
-//     // auto& atom_bs_leader          = atom_bs_list.getCastedLeader();
-//     // SoaAtomicBasisSet& atom_bs_leader          = atom_bs_list.getCastedLeader();
-//     // const SoaAtomicBasisSet& atom_bs_leader          = atom_bs_list.getCastedLeader();
-//     atom_bs_leader.mw_mem_handle_ = collection.lendResource<SoaAtomicBasisSet::SoaAtomicBSetMultiWalkerMem>();
-//   }
-// struct SoaAtomicBSetMultiWalkerMem;
-// ResourceHandle<SoaAtomicBSetMultiWalkerMem> mw_mem_handle_;
 } // namespace qmcplusplus
 #endif
