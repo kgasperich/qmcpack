@@ -64,6 +64,7 @@ struct LogGridLight
     loc = static_cast<int>(std::log(r / lower_bound_) * OneOverLogDelta_);
     return r - lower_bound_ * std::exp(loc * dlog_ratio_);
   }
+  PRAGMA_OFFLOAD("omp end declare target")
 
   inline int locate(T r) const
   {
@@ -231,7 +232,7 @@ public:
       else
       {
         int loc;
-        const auto cL = myGrid.getCL(r_devptr[ir], loc, OneOverLogDelta, lower_bound, dlog_ratio);
+        const auto cL = LogGridLight<T>::getCL(r_devptr[ir], loc, OneOverLogDelta, lower_bound, dlog_ratio);
         // const auto cL       = myGrid.getCLForQuintic(r_list[ir], loc);
         const size_t offset = loc * 6;
         //coeffs is an OhmmsMatrix and [] is a row access operator

@@ -735,8 +735,8 @@ struct SoaAtomicBasisSet
 
     // build dr_pbc: translation vectors to all images
     // should just do this once and store it (like with phase)
-    PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) map(always, to:latR_ptr[:9]) "
-                   "is_device_ptr(dr_pbc_devptr) ")
+    PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) map(always, to:latR_ptr[:9]) \
+                   is_device_ptr(dr_pbc_devptr) ")
     for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
     {
       // is std::div any better than just % and / separately?
@@ -929,8 +929,8 @@ struct SoaAtomicBasisSet
 
     // build dr_pbc: translation vectors to all images
     // should just do this once and store it (like with phase)
-    PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) map(always, to:latR_ptr[:9]) "
-                   "is_device_ptr(dr_pbc_devptr) ")
+    PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) map(always, to:latR_ptr[:9]) \
+        is_device_ptr(dr_pbc_devptr) ")
     for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
     {
       // is std::div any better than just % and / separately?
