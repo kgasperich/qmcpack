@@ -16,6 +16,7 @@
 
 #include "CPU/math.hpp"
 #include "OptimizableObject.h"
+#include <ResourceCollection.h>
 
 namespace qmcplusplus
 {
@@ -57,9 +58,15 @@ struct SoaAtomicBasisSet
   ///temporary storage
   //VectorSoaContainer<RealType, 4> tempS;
   VectorSoaContainer<RealType, 4, OffloadPinnedAllocator<RealType>> tempS;
+  NewTimer& ylm_timer_;
+  NewTimer& rnl_timer_;
 
   ///the constructor
-  explicit SoaAtomicBasisSet(int lmax, bool addsignforM = false) : Ylm(lmax, addsignforM) {}
+  explicit SoaAtomicBasisSet(int lmax, bool addsignforM = false)
+      : Ylm(lmax, addsignforM),
+        ylm_timer_(createGlobalTimer("SoaAtomicBasisSet::Ylm", timer_level_fine)),
+        rnl_timer_(createGlobalTimer("SoaAtomicBasisSet::Rnl", timer_level_fine))
+  {}
 
   void checkInVariables(opt_variables_type& active)
   {
@@ -685,7 +692,6 @@ struct SoaAtomicBasisSet
     assert(psi.size(1) == nBasTot);
 
 
-
     Vector<RealType, OffloadPinnedAllocator<RealType>> dr_new;
 
     Vector<RealType, OffloadPinnedAllocator<RealType>> r_new;
@@ -698,7 +704,7 @@ struct SoaAtomicBasisSet
     correctphase.resize(nElec);
 
 
-    auto* dr_pbc_ptr = dr_pbc.data();
+    auto* dr_pbc_ptr    = dr_pbc.data();
     auto* dr_pbc_devptr = dr_pbc.device_data();
 
     auto* dr_new_ptr    = dr_new.data();
@@ -714,12 +720,13 @@ struct SoaAtomicBasisSet
 
     auto* correctphase_devptr = correctphase.device_data();
 
-    auto* Tv_list_devptr = Tv_list.device_data();
+    auto* Tv_list_devptr    = Tv_list.device_data();
     auto* displ_list_devptr = displ_list.device_data();
 
     // build dr_pbc: translation vectors to all images
     // should just do this once and store it (like with phase)
-    PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) map(always, to:latR_ptr[:9]) is_device_ptr(dr_pbc_devptr) ")
+    PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) map(always, to:latR_ptr[:9]) "
+                   "is_device_ptr(dr_pbc_devptr) ")
     for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
     {
       // is std::div any better than just % and / separately?
@@ -729,16 +736,16 @@ struct SoaAtomicBasisSet
       auto div_ij = std::div(ij, Ny);
       int j       = div_ij.rem;
       int i       = div_ij.quot;
-      int TransX = ((i % 2) * 2 - 1) * ((i + 1) / 2);
-      int TransY = ((j % 2) * 2 - 1) * ((j + 1) / 2);
-      int TransZ = ((k % 2) * 2 - 1) * ((k + 1) / 2);
+      int TransX  = ((i % 2) * 2 - 1) * ((i + 1) / 2);
+      int TransY  = ((j % 2) * 2 - 1) * ((j + 1) / 2);
+      int TransZ  = ((k % 2) * 2 - 1) * ((k + 1) / 2);
       //TODO:
       //  Trans = {TransX,Transy,TransZ};
       //  dr_pbc[i_xyz] = dot(Trans, lattice.R);
       for (size_t i_dim = 0; i_dim < 3; i_dim++)
         dr_pbc_devptr[i_dim + 3 * i_xyz] =
             (TransX * latR_ptr[i_dim + 0 * 3] + TransY * latR_ptr[i_dim + 1 * 3] + TransZ * latR_ptr[i_dim + 2 * 3]);
-            //(TransX * lattice.R(0, i_dim) + TransY * lattice.R(1, i_dim) + TransZ * lattice.R(2, i_dim));
+      //(TransX * lattice.R(0, i_dim) + TransY * lattice.R(1, i_dim) + TransZ * lattice.R(2, i_dim));
     }
 
 
@@ -800,40 +807,293 @@ struct SoaAtomicBasisSet
 
     // ylm_v and phi_r are nElec * Nxyz * tmpSize
     // tmpSize is max(Ylm.size(), RnlID.size())
-    MultiRnl.mw_evaluate(r_new.data(), phi_r, Nxyz * nElec, tmpSize, Rmax);
+    {
+      ScopedTimer local(rnl_timer_);
+      MultiRnl.mw_evaluate(r_new.data(), phi_r, Nxyz * nElec, tmpSize, Rmax);
+    }
     // dr_new is [3 * Nxyz * nElec] realtype
-    Ylm.mw_evaluateV(dr_new.data(), ylm_v, Nxyz * nElec, tmpSize);
+    {
+      ScopedTimer local(ylm_timer_);
+      Ylm.mw_evaluateV(dr_new.data(), ylm_v, Nxyz * nElec, tmpSize);
+    }
     ///Phase for PBC containing the phase for the nearest image displacement and the correction due to the Distance table.
 
     //TODO: remove this when Ylm/MultiRnl mw_evaluateV are offloaded
     tempS.updateTo();
 
     auto* phase_fac_ptr = periodic_image_phase_factors.data();
-    auto* LM_ptr = LM.data();
-    auto* NL_ptr = NL.data();
-    auto* psi_ptr = psi.data();
+    auto* LM_ptr        = LM.data();
+    auto* NL_ptr        = NL.data();
+    auto* psi_ptr       = psi.data();
 
 
-    PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) map(always, to:phase_fac_ptr[:Nxyz], LM_ptr[:BasisSetSize], NL_ptr[:BasisSetSize]) \
+    PRAGMA_OFFLOAD(
+        "omp target teams distribute parallel for collapse(2) map(always, to:phase_fac_ptr[:Nxyz], LM_ptr[:BasisSetSize], NL_ptr[:BasisSetSize]) \
 		    is_device_ptr(ylm_devptr, rnl_devptr, psi_devptr) ")
     for (size_t i_vp = 0; i_vp < nElec; i_vp++)
     {
       for (size_t ib = 0; ib < BasisSetSize; ++ib)
       {
         for (size_t i_xyz = 0; i_xyz < Nxyz; i_xyz++)
-	{
+        {
           const ValueType Phase = phase_fac_ptr[i_xyz] * correctphase_devptr[i_vp];
-          psi_devptr[BasisOffset + ib + i_vp * nBasTot] +=
-              ylm_devptr[(i_xyz + Nxyz * i_vp) * tmpSize + LM_ptr[ib]] * rnl_devptr[(i_xyz + Nxyz * i_vp) * tmpSize + NL_ptr[ib]] * Phase;
+          psi_devptr[BasisOffset + ib + i_vp * nBasTot] += ylm_devptr[(i_xyz + Nxyz * i_vp) * tmpSize + LM_ptr[ib]] *
+              rnl_devptr[(i_xyz + Nxyz * i_vp) * tmpSize + NL_ptr[ib]] * Phase;
           //const ValueType Phase = periodic_image_phase_factors[i_xyz] * correctphase[i_vp];
           //psi(i_vp, BasisOffset + ib) +=
           //psi_ptr[BasisOffset + ib + i_vp*nBasTot] +=
           //    ylm_v[(i_xyz + Nxyz * i_vp) * tmpSize + LM[ib]] * phi_r[(i_xyz + Nxyz * i_vp) * tmpSize + NL[ib]] * Phase;
-	}
+        }
       }
     }
   }
-};
 
+
+  template<typename LAT, typename VT>
+  inline void mw_evaluateV(const RefVectorWithLeader<SoaAtomicBasisSet>& atom_bs_list,
+                           const LAT& lattice,
+                           Array<VT, 2, OffloadPinnedAllocator<VT>>& psi,
+                           const Vector<RealType, OffloadPinnedAllocator<RealType>>& displ_list,
+                           const Vector<RealType, OffloadPinnedAllocator<RealType>>& Tv_list,
+                           const size_t nElec,
+                           const size_t nBasTot,
+                           const size_t c,
+                           const size_t BasisOffset,
+                           const size_t NumCenters)
+  {
+    assert(this == &atom_bs_list.getLeader());
+    auto& atom_bs_leader = atom_bs_list.template getCastedLeader<SoaAtomicBasisSet<ROT, SH>>();
+    /*
+      psi [nElec, nBasTot] (start at [0, BasisOffset])
+      displ_list [3 * nElec * NumCenters] (start at [3*nElec*c])
+      Tv_list [3 * nElec * NumCenters]
+    */
+    //TODO: use QMCTraits::DIM instead of 3?
+    int Nx   = PBCImages[0] + 1;
+    int Ny   = PBCImages[1] + 1;
+    int Nz   = PBCImages[2] + 1;
+    int Nyz  = Ny * Nz;
+    int Nxyz = Nx * Nyz;
+    assert(psi.size(0) == nElec);
+    assert(psi.size(1) == nBasTot);
+
+
+    Vector<RealType, OffloadPinnedAllocator<RealType>> dr_new;
+
+    Vector<RealType, OffloadPinnedAllocator<RealType>> r_new;
+    Vector<RealType, OffloadPinnedAllocator<RealType>> dr_pbc;
+    Vector<ValueType, OffloadPinnedAllocator<ValueType>> correctphase;
+
+    dr_pbc.resize(3 * Nxyz);
+    dr_new.resize(3 * Nxyz * nElec);
+    r_new.resize(Nxyz * nElec);
+    correctphase.resize(nElec);
+
+
+    auto* dr_pbc_ptr    = dr_pbc.data();
+    auto* dr_pbc_devptr = dr_pbc.device_data();
+
+    auto* dr_new_ptr    = dr_new.data();
+    auto* dr_new_devptr = dr_new.device_data();
+
+    auto* r_new_ptr    = r_new.data();
+    auto* r_new_devptr = r_new.device_data();
+
+    // how to map Tensor<T,3> to device?
+    auto* latR_ptr = lattice.R.data();
+
+    auto* psi_devptr = psi.device_data();
+
+    auto* correctphase_devptr = correctphase.device_data();
+
+    auto* Tv_list_devptr    = Tv_list.device_data();
+    auto* displ_list_devptr = displ_list.device_data();
+
+    // build dr_pbc: translation vectors to all images
+    // should just do this once and store it (like with phase)
+    PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) map(always, to:latR_ptr[:9]) "
+                   "is_device_ptr(dr_pbc_devptr) ")
+    for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
+    {
+      // is std::div any better than just % and / separately?
+      auto div_k  = std::div(i_xyz, Nz);
+      int k       = div_k.rem;
+      int ij      = div_k.quot;
+      auto div_ij = std::div(ij, Ny);
+      int j       = div_ij.rem;
+      int i       = div_ij.quot;
+      int TransX  = ((i % 2) * 2 - 1) * ((i + 1) / 2);
+      int TransY  = ((j % 2) * 2 - 1) * ((j + 1) / 2);
+      int TransZ  = ((k % 2) * 2 - 1) * ((k + 1) / 2);
+      //TODO:
+      //  Trans = {TransX,Transy,TransZ};
+      //  dr_pbc[i_xyz] = dot(Trans, lattice.R);
+      for (size_t i_dim = 0; i_dim < 3; i_dim++)
+        dr_pbc_devptr[i_dim + 3 * i_xyz] =
+            (TransX * latR_ptr[i_dim + 0 * 3] + TransY * latR_ptr[i_dim + 1 * 3] + TransZ * latR_ptr[i_dim + 2 * 3]);
+      //(TransX * lattice.R(0, i_dim) + TransY * lattice.R(1, i_dim) + TransZ * lattice.R(2, i_dim));
+    }
+
+
+#if not defined(QMC_COMPLEX)
+
+    PRAGMA_OFFLOAD("omp target teams distribute parallel for is_device_ptr(correctphase_devptr) ")
+    for (size_t i_vp = 0; i_vp < nElec; i_vp++)
+      correctphase_devptr[i_vp] = 1.0;
+
+#else
+    auto* SuperTwist_ptr = SuperTwist.data();
+
+    PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) map(always, to:SuperTwist_ptr[:9]) \
+		    is_device_ptr(Tv_list_devptr, correctphase_devptr) ")
+    for (size_t i_vp = 0; i_vp < nElec; i_vp++)
+    {
+      //RealType phasearg = dot(3, SuperTwist.data(), 1, Tv_list.data() + 3 * i_vp, 1);
+      RealType phasearg = 0;
+      for (size_t i_dim = 0; i_dim < 3; i_dim++)
+        phasearg += SuperTwist[i_dim] * Tv_list_devptr[i_dim + 3 * i_vp];
+      RealType s, c;
+      qmcplusplus::sincos(-phasearg, &s, &c);
+      correctphase_devptr[i_vp] = ValueType(c, s);
+    }
+#endif
+    correctphase.updateFrom();
+
+    PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) \
+		    is_device_ptr(dr_new_devptr, dr_pbc_devptr, r_new_devptr, displ_list_devptr) ")
+    for (size_t i_vp = 0; i_vp < nElec; i_vp++)
+    {
+      for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
+      {
+        RealType tmp_r2 = 0.0;
+        for (size_t i_dim = 0; i_dim < 3; i_dim++)
+        {
+          dr_new_devptr[i_dim + 3 * (i_xyz + Nxyz * i_vp)] =
+              -(displ_list_devptr[i_dim + 3 * (i_vp + c * nElec)] + dr_pbc_devptr[i_dim + 3 * i_xyz]);
+          tmp_r2 += dr_new_devptr[i_dim + 3 * (i_xyz + Nxyz * i_vp)] * dr_new_devptr[i_dim + 3 * (i_xyz + Nxyz * i_vp)];
+        }
+        r_new_devptr[i_xyz + Nxyz * i_vp] = std::sqrt(tmp_r2);
+      }
+    }
+
+    // TODO: remove this when Rnl/Ylm offloaded
+    r_new.updateFrom();
+    dr_new.updateFrom();
+    // TODO: manage this better? set in builder?
+    // maybe just do one image at a time?
+    size_t tmpSize = std::max(Ylm.size(), RnlID.size());
+    tempS.resize(nElec * Nxyz * tmpSize);
+
+    RealType* restrict ylm_v = tempS.data(0);
+    RealType* restrict phi_r = tempS.data(1);
+
+    auto* ylm_devptr = tempS.device_data(0);
+    auto* rnl_devptr = tempS.device_data(1);
+
+
+    // ylm_v and phi_r are nElec * Nxyz * tmpSize
+    // tmpSize is max(Ylm.size(), RnlID.size())
+    {
+      ScopedTimer local(rnl_timer_);
+      MultiRnl.mw_evaluate(r_new.data(), phi_r, Nxyz * nElec, tmpSize, Rmax);
+    }
+    // dr_new is [3 * Nxyz * nElec] realtype
+    {
+      ScopedTimer local(ylm_timer_);
+      Ylm.mw_evaluateV(dr_new.data(), ylm_v, Nxyz * nElec, tmpSize);
+    }
+    ///Phase for PBC containing the phase for the nearest image displacement and the correction due to the Distance table.
+
+    //TODO: remove this when Ylm/MultiRnl mw_evaluateV are offloaded
+    tempS.updateTo();
+
+    auto* phase_fac_ptr = periodic_image_phase_factors.data();
+    auto* LM_ptr        = LM.data();
+    auto* NL_ptr        = NL.data();
+    auto* psi_ptr       = psi.data();
+
+
+    PRAGMA_OFFLOAD(
+        "omp target teams distribute parallel for collapse(2) map(always, to:phase_fac_ptr[:Nxyz], LM_ptr[:BasisSetSize], NL_ptr[:BasisSetSize]) \
+		    is_device_ptr(ylm_devptr, rnl_devptr, psi_devptr) ")
+    for (size_t i_vp = 0; i_vp < nElec; i_vp++)
+    {
+      for (size_t ib = 0; ib < BasisSetSize; ++ib)
+      {
+        for (size_t i_xyz = 0; i_xyz < Nxyz; i_xyz++)
+        {
+          const ValueType Phase = phase_fac_ptr[i_xyz] * correctphase_devptr[i_vp];
+          psi_devptr[BasisOffset + ib + i_vp * nBasTot] += ylm_devptr[(i_xyz + Nxyz * i_vp) * tmpSize + LM_ptr[ib]] *
+              rnl_devptr[(i_xyz + Nxyz * i_vp) * tmpSize + NL_ptr[ib]] * Phase;
+          //const ValueType Phase = periodic_image_phase_factors[i_xyz] * correctphase[i_vp];
+          //psi(i_vp, BasisOffset + ib) +=
+          //psi_ptr[BasisOffset + ib + i_vp*nBasTot] +=
+          //    ylm_v[(i_xyz + Nxyz * i_vp) * tmpSize + LM[ib]] * phi_r[(i_xyz + Nxyz * i_vp) * tmpSize + NL[ib]] * Phase;
+        }
+      }
+    }
+  }
+
+
+  struct SoaAtomicBSetMultiWalkerMem;
+  ResourceHandle<SoaAtomicBSetMultiWalkerMem> mw_mem_handle_;
+
+  void createResource(ResourceCollection& collection) const
+  {
+    auto resource_index = collection.addResource(std::make_unique<SoaAtomicBSetMultiWalkerMem>());
+  }
+
+  void acquireResource(ResourceCollection& collection, const RefVectorWithLeader<SoaAtomicBasisSet>& atom_bs_list) const
+  {
+    assert(this == &atom_bs_list.getLeader());
+    // auto& atom_bs_leader          = atom_bs_list.getCastedLeader<SoaAtomicBasisSet>();
+    // auto& atom_bs_leader          = atom_bs_list.getCastedLeader();
+    // SoaAtomicBasisSet& atom_bs_leader          = atom_bs_list.getCastedLeader();
+    // const SoaAtomicBasisSet& atom_bs_leader          = atom_bs_list.getCastedLeader();
+    auto& atom_bs_leader          = atom_bs_list.template getCastedLeader<SoaAtomicBasisSet>();
+    atom_bs_leader.mw_mem_handle_ = collection.lendResource<SoaAtomicBSetMultiWalkerMem>();
+  }
+
+  void releaseResource(ResourceCollection& collection, const RefVectorWithLeader<SoaAtomicBasisSet>& atom_bs_list) const
+  {
+    assert(this == &atom_bs_list.getLeader());
+    // auto& atom_bs_leader = atom_bs_list.getCastedLeader();
+    // const SoaAtomicBasisSet& atom_bs_leader          = atom_bs_list.getCastedLeader();
+    auto& atom_bs_leader = atom_bs_list.template getCastedLeader<SoaAtomicBasisSet>();
+    collection.takebackResource(atom_bs_leader.mw_mem_handle_);
+  }
+
+  struct SoaAtomicBSetMultiWalkerMem : public Resource
+  {
+    SoaAtomicBSetMultiWalkerMem() : Resource("SoaAtomicBasisSet") {}
+
+    SoaAtomicBSetMultiWalkerMem(const SoaAtomicBSetMultiWalkerMem&) : SoaAtomicBSetMultiWalkerMem() {}
+
+    std::unique_ptr<Resource> makeClone() const override
+    {
+      return std::make_unique<SoaAtomicBSetMultiWalkerMem>(*this);
+    }
+
+    // OffloadMWVGLArray phi_vgl_v;    // [5][NW][NumMO]
+    // OffloadMWVGLArray basis_vgl_mw; // [5][NW][NumAO]
+    // OffloadMWVArray phi_v;          // [NW][NumMO]
+    // OffloadMWVArray basis_v_mw;     // [NW][NumAO]
+    // OffloadMWVArray vp_phi_v;       // [NVPs][NumMO]
+    // OffloadMWVArray vp_basis_v_mw;  // [NVPs][NumAO]
+  };
+};
+// template<typename ROT, typename SH>
+// void SoaAtomicBasisSet<ROT, SH>::acquireResource(ResourceCollection& collection, const RefVectorWithLeader<SoaAtomicBasisSet<ROT,SH>>& atom_bs_list) const
+//   {
+//     assert(this == &atom_bs_list.getLeader());
+//     auto& atom_bs_leader          = atom_bs_list.template getCastedLeader<SoaAtomicBasisSet<ROT,SH>>();
+//     // auto& atom_bs_leader          = atom_bs_list.getCastedLeader<SoaAtomicBasisSet>();
+//     // auto& atom_bs_leader          = atom_bs_list.getCastedLeader();
+//     // SoaAtomicBasisSet& atom_bs_leader          = atom_bs_list.getCastedLeader();
+//     // const SoaAtomicBasisSet& atom_bs_leader          = atom_bs_list.getCastedLeader();
+//     atom_bs_leader.mw_mem_handle_ = collection.lendResource<SoaAtomicBasisSet::SoaAtomicBSetMultiWalkerMem>();
+//   }
+// struct SoaAtomicBSetMultiWalkerMem;
+// ResourceHandle<SoaAtomicBSetMultiWalkerMem> mw_mem_handle_;
 } // namespace qmcplusplus
 #endif

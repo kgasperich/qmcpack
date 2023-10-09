@@ -117,6 +117,15 @@ public:
   void mw_evaluateValue(const RefVectorWithLeader<ParticleSet>& P_list, int iat, OffloadMWVArray& v) override;
 
   /** compute V using packed array with all walkers 
+   * @param P_list list of quantum particleset (one for each walker)
+   * @param iat active particle
+   * @param v   Array(n_walkers, BasisSetSize)
+   */
+  void mw_evaluateValueVPs2(RefVectorWithLeader<SoaBasisSetBase<ORBT>>& bs_list,
+                            const RefVectorWithLeader<const VirtualParticleSet>& vp_list,
+                            OffloadMWVArray& v) override;
+
+  /** compute V using packed array with all walkers 
    * @param vp_list list of quantum virtual particleset (one for each walker)
    * @param v   Array(n_walkers, BasisSetSize)
    */
@@ -163,6 +172,10 @@ public:
    */
   void mw_evaluateV_mvp(const RefVectorWithLeader<const VirtualParticleSet>& vp_list, OffloadMWVArray& vals) override;
 
+  void mw_evaluateV_mvp2(const RefVectorWithLeader<SoaBasisSetBase<ORBT>>& bs_list,
+                         const RefVectorWithLeader<const VirtualParticleSet>& vp_list,
+                         OffloadMWVArray& vals) override;
+
   void evaluateGradSourceV(const ParticleSet& P, int iat, const ParticleSet& ions, int jion, vgl_type& vgl) override;
 
   void evaluateGradSourceVGL(const ParticleSet& P,
@@ -176,6 +189,24 @@ public:
    * @param aos a set of Centered Atomic Orbitals
    */
   void add(int icenter, std::unique_ptr<COT> aos);
+
+
+  /** initialize a shared resource and hand it to collection
+   */
+  void createResource(ResourceCollection& collection) const override;
+
+  /** acquire a shared resource from collection
+   */
+  void acquireResource(ResourceCollection& collection,
+                       const RefVectorWithLeader<SoaBasisSetBase<ORBT>>& spo_list) const override;
+
+  /** return a shared resource to collection
+   */
+  void releaseResource(ResourceCollection& collection,
+                       const RefVectorWithLeader<SoaBasisSetBase<ORBT>>& spo_list) const override;
+
+  static RefVectorWithLeader<COT> extractLOBasisRefList(const RefVectorWithLeader<SoaBasisSetBase<ORBT>>& bs_list,
+                                                        int id);
 };
 } // namespace qmcplusplus
 #endif

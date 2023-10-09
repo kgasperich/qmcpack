@@ -157,6 +157,10 @@ struct SoaBasisSetBase
   //Evaluates value for all the electrons of the virtual particles. places it in a offload array for batched code.
   virtual void mw_evaluateValueVPs(const RefVectorWithLeader<const VirtualParticleSet>& vp_list,
                                    OffloadMWVArray& v) = 0;
+  //Evaluates value for all the electrons of the virtual particles. places it in a offload array for batched code.
+  virtual void mw_evaluateValueVPs2(RefVectorWithLeader<SoaBasisSetBase>& bs_list,
+                                    const RefVectorWithLeader<const VirtualParticleSet>& vp_list,
+                                    OffloadMWVArray& v) = 0;
   //Evaluates value, gradient, and Hessian for electron "iat".  Parks them into a temporary data structure "vgh".
   virtual void evaluateVGH(const ParticleSet& P, int iat, vgh_type& vgh) = 0;
   //Evaluates value, gradient, and Hessian, and Gradient Hessian for electron "iat".  Parks them into a temporary data structure "vghgh".
@@ -173,11 +177,30 @@ struct SoaBasisSetBase
   virtual void evaluateV(const ParticleSet& P, int iat, value_type* restrict vals) = 0;
 
   virtual void mw_evaluateV_mvp(const RefVectorWithLeader<const VirtualParticleSet>& vp_list,
-                                OffloadMWVArray& vals) = 0;
+                                OffloadMWVArray& vals)  = 0;
+  virtual void mw_evaluateV_mvp2(const RefVectorWithLeader<SoaBasisSetBase>& bs_list,
+                                 const RefVectorWithLeader<const VirtualParticleSet>& vp_list,
+                                 OffloadMWVArray& vals) = 0;
   virtual bool is_S_orbital(int mo_idx, int ao_idx) { return false; }
 
   /// Determine which orbitals are S-type.  Used for cusp correction.
   virtual void queryOrbitalsForSType(const std::vector<bool>& corrCenter, std::vector<bool>& is_s_orbital) const {}
+
+  /** initialize a shared resource and hand it to collection
+   */
+  virtual void createResource(ResourceCollection& collection) const {}
+
+  /** acquire a shared resource from collection
+   */
+  virtual void acquireResource(ResourceCollection& collection,
+                               const RefVectorWithLeader<SoaBasisSetBase>& bset_list) const
+  {}
+
+  /** return a shared resource to collection
+   */
+  virtual void releaseResource(ResourceCollection& collection,
+                               const RefVectorWithLeader<SoaBasisSetBase>& bset_list) const
+  {}
 };
 
 } // namespace qmcplusplus

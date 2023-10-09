@@ -126,6 +126,19 @@ void LCAOrbitalSet::releaseResource(ResourceCollection& collection, const RefVec
   collection.takebackResource(spo_leader.mw_mem_handle_);
 }
 
+RefVectorWithLeader<typename LCAOrbitalSet::basis_type> LCAOrbitalSet::extractBasRefList(
+    const RefVectorWithLeader<SPOSet>& spo_list)
+{
+  auto& spo_leader = spo_list.getCastedLeader<LCAOrbitalSet>();
+  RefVectorWithLeader<basis_type> bas_list(*spo_leader.myBasisSet);
+  bas_list.reserve(spo_list.size());
+  for (size_t iw = 0; iw < spo_list.size(); iw++)
+  {
+    auto& spo_i = spo_list.getCastedElement<LCAOrbitalSet>(iw);
+    bas_list.push_back(*spo_i.myBasisSet);
+  }
+  return bas_list;
+}
 std::unique_ptr<SPOSet> LCAOrbitalSet::makeClone() const { return std::make_unique<LCAOrbitalSet>(*this); }
 
 void LCAOrbitalSet::evaluateValue(const ParticleSet& P, int iat, ValueVector& psi)
@@ -480,7 +493,8 @@ void LCAOrbitalSet::mw_evaluateValueVPsImplGEMM(const RefVectorWithLeader<SPOSet
   const size_t nVPs = vp_phi_v.size(0);
   vp_basis_v_mw.resize(nVPs, BasisSetSize);
 
-  myBasisSet->mw_evaluateValueVPs(vp_list, vp_basis_v_mw);
+  auto bs_list = spo_leader.extractBasRefList(spo_list);
+  myBasisSet->mw_evaluateValueVPs2(bs_list, vp_list, vp_basis_v_mw);
 
   if (Identity)
   {
