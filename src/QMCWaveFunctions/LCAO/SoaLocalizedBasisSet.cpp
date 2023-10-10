@@ -316,9 +316,9 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateV_mvp2(const RefVectorWithLeade
 
   auto& vps_leader = vp_list.getLeader();
 
-  auto& coordinates_leader = static_cast<const RealSpacePositionsOMPTarget&>(vps_leader.getCoordinates());
-  auto& mw_rsoa_dev_ptrs   = coordinates_leader.getMultiWalkerRSoADevicePtrs();
-  const size_t np_padded   = vps_leader.getCoordinates().getAllParticlePos().capacity();
+  // auto& coordinates_leader = static_cast<const RealSpacePositionsOMPTarget&>(vps_leader.getCoordinates());
+  // auto& mw_rsoa_dev_ptrs   = coordinates_leader.getMultiWalkerRSoADevicePtrs();
+  // const size_t np_padded   = vps_leader.getCoordinates().getAllParticlePos().capacity();
 
 
   const auto dt_list(vps_leader.extractDTRefList_vp(vp_list, myTableIndex));
