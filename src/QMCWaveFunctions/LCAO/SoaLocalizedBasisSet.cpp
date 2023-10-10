@@ -368,7 +368,7 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateV_mvp2(const RefVectorWithLeade
     // LOBasisSet[IonID[c]]->mw_evaluateV(vps_leader.getLattice(), vp_basis_v, displ_list_tr, Tv_list, nVPs, nBasTot, c,
     //  BasisOffset[c], NumCenters);
   }
-  vp_basis_v.updateFrom();
+  // vp_basis_v.updateFrom();
 }
 
 template<class COT, typename ORBT>
