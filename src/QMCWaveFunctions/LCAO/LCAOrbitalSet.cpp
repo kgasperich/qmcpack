@@ -511,10 +511,9 @@ void LCAOrbitalSet::mw_evaluateValueVPsImplGEMM(const RefVectorWithLeader<SPOSet
   int success           = 0;
   if (Identity)
   {
-    success = ompBLAS::copy_batched(dummy_handle, OrbitalSetSize * nVPs, &vp_basis_devptr, 1, &vp_phi_devptr, 1, 1);
+    success = ompBLAS::copy(dummy_handle, OrbitalSetSize * nVPs, vp_basis_devptr, 1, vp_phi_devptr, 1);
     if (success != 0)
-      throw std::runtime_error("In LCAOrbitalSet::mw_evaluateValueVPsImplGEMM ompBLAS::copy_batched failed.");
-    // std::copy_n(vp_basis_v_mw.data_at(0, 0), OrbitalSetSize * nVPs, vp_phi_v.data_at(0, 0));
+      throw std::runtime_error("In LCAOrbitalSet::mw_evaluateValueVPsImplGEMM ompBLAS::copy failed.");
   }
   else
   {
