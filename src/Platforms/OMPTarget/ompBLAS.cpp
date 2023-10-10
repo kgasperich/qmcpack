@@ -13,6 +13,7 @@
 #include "ompBLAS.hpp"
 #include <stdexcept>
 #include "config.h"
+#include "oneapi/mkl/blas.hpp"
 #if !defined(OPENMP_NO_COMPLEX)
 #include "ompReductionComplex.hpp"
 #endif
