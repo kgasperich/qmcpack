@@ -13,6 +13,7 @@
 #include "LCAOrbitalSet.h"
 #include "Numerics/MatrixOperators.h"
 #include "CPU/BLAS.hpp"
+#include "OMPTarget/ompBLAS.hpp"
 #include <ResourceCollection.h>
 
 namespace qmcplusplus
@@ -79,7 +80,7 @@ void LCAOrbitalSet::setOrbitalSetSize(int norbs)
 
   Identity       = false;
   OrbitalSetSize = norbs;
-  C              = std::make_shared<ValueMatrix>(OrbitalSetSize, BasisSetSize);
+  C              = std::make_shared<OffloadValueMatrix>(OrbitalSetSize, BasisSetSize);
   Tempv.resize(OrbitalSetSize);
   Temphv.resize(OrbitalSetSize);
   Tempghv.resize(OrbitalSetSize);
@@ -166,8 +167,8 @@ void LCAOrbitalSet::evaluateValue(const ParticleSet& P, int iat, ValueVector& ps
 }
 
 /** Find a better place for other user classes, Matrix should be padded as well */
-template<typename T, unsigned D>
-inline void Product_ABt(const VectorSoaContainer<T, D>& A, const Matrix<T>& B, VectorSoaContainer<T, D>& C)
+template<typename T, unsigned D, typename Alloc>
+inline void Product_ABt(const VectorSoaContainer<T, D>& A, const Matrix<T, Alloc>& B, VectorSoaContainer<T, D>& C)
 {
   constexpr char transa = 't';
   constexpr char transb = 'n';
@@ -504,13 +505,13 @@ void LCAOrbitalSet::mw_evaluateValueVPsImplGEMM(const RefVectorWithLeader<SPOSet
   auto bs_list = spo_leader.extractBasRefList(spo_list);
   myBasisSet->mw_evaluateValueVPs2(bs_list, vp_list, vp_basis_v_mw);
 
-  auto* vp_basis_devptr = vp_basis_v_mw.device_data();
-  auto* vp_phi_devptr   = vp_phi_v.device_data();
+  auto* vp_basis_devptr = vp_basis_v_mw.device_data_at(0, 0);
+  auto* vp_phi_devptr   = vp_phi_v.device_data_at(0, 0);
   int dummy_handle      = 0;
   int success           = 0;
   if (Identity)
   {
-    success = ompBLAS::copy_batched(dummy_handle, OrbitalSetSize * nVPs, vp_basis_v_mw_devptr, 1, vp_phi_devptr, 1, 1);
+    success = ompBLAS::copy_batched(dummy_handle, OrbitalSetSize * nVPs, &vp_basis_devptr, 1, &vp_phi_devptr, 1, 1);
     if (success != 0)
       throw std::runtime_error("In LCAOrbitalSet::mw_evaluateValueVPsImplGEMM ompBLAS::copy_batched failed.");
     // std::copy_n(vp_basis_v_mw.data_at(0, 0), OrbitalSetSize * nVPs, vp_phi_v.data_at(0, 0));
@@ -519,13 +520,16 @@ void LCAOrbitalSet::mw_evaluateValueVPsImplGEMM(const RefVectorWithLeader<SPOSet
   {
     const size_t requested_orb_size = vp_phi_v.size(1);
     assert(requested_orb_size <= OrbitalSetSize);
-    ValueMatrix C_partial_view(C->data(), requested_orb_size, BasisSetSize);
-    success = ompBLAS::gemm_impl(dummy_handle, 'T', 'N',
-                                 requested_orb_size, // MOs
-                                 nVPs,               // walkers * Virtual Particles
-                                 BasisSetSize,       // AOs
-                                 1, c_devptr, BasisSetSize, vp_basis_devptr, BasisSetSize, 0, vp_phi_devptr,
-                                 requested_orb_size);
+    // TODO: clean this up
+    OffloadValueMatrix C_partial_view(C->data(), requested_orb_size, BasisSetSize);
+    C_partial_view.updateTo();
+    auto* c_devptr = C_partial_view.device_data();
+    success =
+        ompBLAS::gemm(dummy_handle, 'T', 'N',
+                      requested_orb_size, // MOs
+                      nVPs,               // walkers * Virtual Particles
+                      BasisSetSize,       // AOs
+                      1, c_devptr, BasisSetSize, vp_basis_devptr, BasisSetSize, 0, vp_phi_devptr, requested_orb_size);
     if (success != 0)
       throw std::runtime_error("In LCAOrbitalSet::mw_evaluateValueVPsImplGEMM ompBLAS::gemm failed.");
 

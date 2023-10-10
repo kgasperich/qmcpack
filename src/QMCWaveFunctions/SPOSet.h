@@ -60,6 +60,7 @@ public:
   using OffloadMWVArray   = Array<ValueType, 2, OffloadPinnedAllocator<ValueType>>; // [walker, Orbs]
   template<typename DT>
   using OffloadMatrix = Matrix<DT, OffloadPinnedAllocator<DT>>;
+  using OffloadValueMatrix = OffloadMatrix<ValueType>;
 
   /** constructor */
   SPOSet(const std::string& my_name);

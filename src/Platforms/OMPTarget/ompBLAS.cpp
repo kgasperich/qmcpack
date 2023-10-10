@@ -13,7 +13,9 @@
 #include "ompBLAS.hpp"
 #include <stdexcept>
 #include "config.h"
+#ifdef HAVE_MKL
 #include "oneapi/mkl/blas.hpp"
+#endif
 #if !defined(OPENMP_NO_COMPLEX)
 #include "ompReductionComplex.hpp"
 #endif
@@ -22,19 +24,21 @@ namespace qmcplusplus
 {
 namespace ompBLAS
 {
+#ifdef HAVE_MKL
 // TODO: add conjtrans
 inline oneapi::mkl::transpose convertTransEnum(char trans)
 {
   return trans == 'T' ? oneapi::mkl::transpose::trans : oneapi::mkl::transpose::nontrans;
 }
+#endif
 
 template<typename T>
 ompBLAS_status gemm_impl(ompBLAS_handle& handle,
                          const char transa,
                          const char transb,
-                         const int m,
-                         const int n,
-                         const int k,
+                         const int M,
+                         const int N,
+                         const int K,
                          const T alpha,
                          const T* const A,
                          const int lda,
@@ -44,8 +48,116 @@ ompBLAS_status gemm_impl(ompBLAS_handle& handle,
                          T* const C,
                          const int ldc)
 {
+  // TODO: this assumes row major
+#ifdef HAVE_MKL
   return oneapi::mkl::blas::gemm(handle, convertTransEnum(transa), convertTransEnum(transb), m, n, k, alpha, A, lda, B,
                                  ldb, beta, C, ldc);
+#else
+  if (transa == 'T' && transb == 'N') //A(ji) * B(jk) -> C(ik)
+  {
+    PRAGMA_OFFLOAD("omp target teams distribute collapse(2) num_teams(m * n) is_device_ptr(A, B, C)")
+    for (size_t m = 0; m < M; m++)
+      for (size_t n = 0; n < N; n++)
+        for (size_t k = 0; k < K; k++)
+          C[m * ldc + n] = beta * C[m * ldc + n] + alpha * A[lda * k + m] * B[ldb * k + n];
+  }
+  else if (transa == 'T' && transb == 'T')
+  {
+    PRAGMA_OFFLOAD("omp target teams distribute collapse(2) num_teams(m * n) is_device_ptr(A, B, C)")
+    for (size_t m = 0; m < M; m++)
+      for (size_t n = 0; n < N; n++)
+        for (size_t k = 0; k < K; k++)
+          C[m * ldc + n] = beta * C[m * ldc + n] + alpha * A[lda * k + m] * B[ldb * n + k];
+  }
+  else if (transa == 'N' && transb == 'T')
+  {
+    PRAGMA_OFFLOAD("omp target teams distribute collapse(2) num_teams(m * n) is_device_ptr(A, B, C)")
+    for (size_t m = 0; m < M; m++)
+      for (size_t n = 0; n < N; n++)
+        for (size_t k = 0; k < K; k++)
+          C[m * ldc + n] = beta * C[m * ldc + n] + alpha * A[lda * m + k] * B[ldb * n + k];
+  }
+  else if (transa == 'N' && transb == 'N')
+  {
+    PRAGMA_OFFLOAD("omp target teams distribute collapse(2) num_teams(m * n) is_device_ptr(A, B, C)")
+    for (size_t m = 0; m < M; m++)
+      for (size_t n = 0; n < N; n++)
+        for (size_t k = 0; k < K; k++)
+          C[m * ldc + n] = beta * C[m * ldc + n] + alpha * A[lda * m + k] * B[ldb * k + n];
+  }
+
+#endif
+  return 0;
+}
+
+
+ompBLAS_status gemm(ompBLAS_handle& handle,
+                    const char transa,
+                    const char transb,
+                    const int M,
+                    const int N,
+                    const int K,
+                    const float alpha,
+                    const float* const A,
+                    const int lda,
+                    const float* const B,
+                    const int ldb,
+                    const float beta,
+                    float* const C,
+                    const int ldc)
+{
+  return gemm_impl(handle, transa, transb, M, N, K, alpha, A, lda, B, ldb, beta, C, ldc);
+}
+ompBLAS_status gemm(ompBLAS_handle& handle,
+                    const char transa,
+                    const char transb,
+                    const int M,
+                    const int N,
+                    const int K,
+                    const double alpha,
+                    const double* const A,
+                    const int lda,
+                    const double* const B,
+                    const int ldb,
+                    const double beta,
+                    double* const C,
+                    const int ldc)
+{
+  return gemm_impl(handle, transa, transb, M, N, K, alpha, A, lda, B, ldb, beta, C, ldc);
+}
+ompBLAS_status gemm(ompBLAS_handle& handle,
+                    const char transa,
+                    const char transb,
+                    const int M,
+                    const int N,
+                    const int K,
+                    const std::complex<float> alpha,
+                    const std::complex<float>* const A,
+                    const int lda,
+                    const std::complex<float>* const B,
+                    const int ldb,
+                    const std::complex<float> beta,
+                    std::complex<float>* const C,
+                    const int ldc)
+{
+  return gemm_impl(handle, transa, transb, M, N, K, alpha, A, lda, B, ldb, beta, C, ldc);
+}
+ompBLAS_status gemm(ompBLAS_handle& handle,
+                    const char transa,
+                    const char transb,
+                    const int M,
+                    const int N,
+                    const int K,
+                    const std::complex<double> alpha,
+                    const std::complex<double>* const A,
+                    const int lda,
+                    const std::complex<double>* const B,
+                    const int ldb,
+                    const std::complex<double> beta,
+                    std::complex<double>* const C,
+                    const int ldc)
+{
+  return gemm_impl(handle, transa, transb, M, N, K, alpha, A, lda, B, ldb, beta, C, ldc);
 }
 
 template<typename T>
