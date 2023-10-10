@@ -55,7 +55,7 @@ ompBLAS_status gemm_impl(ompBLAS_handle& handle,
 #else
   if (transa == 'T' && transb == 'N') //A(ji) * B(jk) -> C(ik)
   {
-    PRAGMA_OFFLOAD("omp target teams distribute collapse(2) num_teams(m * n) is_device_ptr(A, B, C)")
+    PRAGMA_OFFLOAD("omp target teams distribute collapse(2) num_teams(M * N) is_device_ptr(A, B, C)")
     for (size_t m = 0; m < M; m++)
       for (size_t n = 0; n < N; n++)
         for (size_t k = 0; k < K; k++)
@@ -63,7 +63,7 @@ ompBLAS_status gemm_impl(ompBLAS_handle& handle,
   }
   else if (transa == 'T' && transb == 'T')
   {
-    PRAGMA_OFFLOAD("omp target teams distribute collapse(2) num_teams(m * n) is_device_ptr(A, B, C)")
+    PRAGMA_OFFLOAD("omp target teams distribute collapse(2) num_teams(M * N) is_device_ptr(A, B, C)")
     for (size_t m = 0; m < M; m++)
       for (size_t n = 0; n < N; n++)
         for (size_t k = 0; k < K; k++)
@@ -71,7 +71,7 @@ ompBLAS_status gemm_impl(ompBLAS_handle& handle,
   }
   else if (transa == 'N' && transb == 'T')
   {
-    PRAGMA_OFFLOAD("omp target teams distribute collapse(2) num_teams(m * n) is_device_ptr(A, B, C)")
+    PRAGMA_OFFLOAD("omp target teams distribute collapse(2) num_teams(M * N) is_device_ptr(A, B, C)")
     for (size_t m = 0; m < M; m++)
       for (size_t n = 0; n < N; n++)
         for (size_t k = 0; k < K; k++)
@@ -79,7 +79,7 @@ ompBLAS_status gemm_impl(ompBLAS_handle& handle,
   }
   else if (transa == 'N' && transb == 'N')
   {
-    PRAGMA_OFFLOAD("omp target teams distribute collapse(2) num_teams(m * n) is_device_ptr(A, B, C)")
+    PRAGMA_OFFLOAD("omp target teams distribute collapse(2) num_teams(M * N) is_device_ptr(A, B, C)")
     for (size_t m = 0; m < M; m++)
       for (size_t n = 0; n < N; n++)
         for (size_t k = 0; k < K; k++)
