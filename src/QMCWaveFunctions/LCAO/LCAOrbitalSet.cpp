@@ -520,10 +520,8 @@ void LCAOrbitalSet::mw_evaluateValueVPsImplGEMM(const RefVectorWithLeader<SPOSet
   {
     const size_t requested_orb_size = vp_phi_v.size(1);
     assert(requested_orb_size <= OrbitalSetSize);
-    // TODO: clean this up
-    OffloadValueMatrix C_partial_view(C->data(), requested_orb_size, BasisSetSize);
-    C_partial_view.updateTo();
-    auto* c_devptr = C_partial_view.device_data();
+    C->updateTo();
+    auto* c_devptr = C->device_data();
     success =
         ompBLAS::gemm(dummy_handle, 'T', 'N',
                       requested_orb_size, // MOs
@@ -532,13 +530,6 @@ void LCAOrbitalSet::mw_evaluateValueVPsImplGEMM(const RefVectorWithLeader<SPOSet
                       1, c_devptr, BasisSetSize, vp_basis_devptr, BasisSetSize, 0, vp_phi_devptr, requested_orb_size);
     if (success != 0)
       throw std::runtime_error("In LCAOrbitalSet::mw_evaluateValueVPsImplGEMM ompBLAS::gemm failed.");
-
-    // BLAS::gemm('T', 'N',
-    //            requested_orb_size, // MOs
-    //            nVPs,               // walkers * Virtual Particles
-    //            BasisSetSize,       // AOs
-    //            1, C_partial_view.data(), BasisSetSize, vp_basis_v_mw.data(), BasisSetSize, 0, vp_phi_v.data(),
-    //            requested_orb_size);
   }
 }
 void LCAOrbitalSet::mw_evaluateValue(const RefVectorWithLeader<SPOSet>& spo_list,

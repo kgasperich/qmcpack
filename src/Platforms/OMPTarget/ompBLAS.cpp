@@ -48,7 +48,7 @@ ompBLAS_status gemm_impl(ompBLAS_handle& handle,
                          T* const C,
                          const int ldc)
 {
-  // TODO: this assumes row major
+  // TODO: this assumes col major
   // #ifdef HAVE_MKL
   //   return oneapi::mkl::blas::gemm(handle, convertTransEnum(transa), convertTransEnum(transb), m, n, k, alpha, A, lda, B,
   //                                  ldb, beta, C, ldc);
@@ -59,9 +59,9 @@ ompBLAS_status gemm_impl(ompBLAS_handle& handle,
     for (size_t m = 0; m < M; m++)
       for (size_t n = 0; n < N; n++)
       {
-        C[m * ldc + n] *= beta;
+        C[n * ldc + m] *= beta;
         for (size_t k = 0; k < K; k++)
-          C[m * ldc + n] += alpha * A[lda * k + m] * B[ldb * k + n];
+          C[n * ldc + m] += alpha * A[lda * m + k] * B[ldb * n + k];
       }
   }
   else if (transa == 'T' && transb == 'T')
@@ -70,9 +70,9 @@ ompBLAS_status gemm_impl(ompBLAS_handle& handle,
     for (size_t m = 0; m < M; m++)
       for (size_t n = 0; n < N; n++)
       {
-        C[m * ldc + n] *= beta;
+        C[n * ldc + m] *= beta;
         for (size_t k = 0; k < K; k++)
-          C[m * ldc + n] += alpha * A[lda * k + m] * B[ldb * n + k];
+          C[n * ldc + m] += alpha * A[lda * m + k] * B[ldb * k + n];
       }
   }
   else if (transa == 'N' && transb == 'T')
@@ -81,9 +81,9 @@ ompBLAS_status gemm_impl(ompBLAS_handle& handle,
     for (size_t m = 0; m < M; m++)
       for (size_t n = 0; n < N; n++)
       {
-        C[m * ldc + n] *= beta;
+        C[n * ldc + m] *= beta;
         for (size_t k = 0; k < K; k++)
-          C[m * ldc + n] += alpha * A[lda * m + k] * B[ldb * n + k];
+          C[n * ldc + m] += alpha * A[lda * k + m] * B[ldb * k + n];
       }
   }
   else if (transa == 'N' && transb == 'N')
@@ -92,9 +92,9 @@ ompBLAS_status gemm_impl(ompBLAS_handle& handle,
     for (size_t m = 0; m < M; m++)
       for (size_t n = 0; n < N; n++)
       {
-        C[m * ldc + n] *= beta;
+        C[n * ldc + m] *= beta;
         for (size_t k = 0; k < K; k++)
-          C[m * ldc + n] += alpha * A[lda * m + k] * B[ldb * k + n];
+          C[n * ldc + m] += alpha * A[lda * k + m] * B[ldb * n + k];
       }
   }
 
