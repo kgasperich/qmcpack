@@ -13,9 +13,9 @@
 #include "ompBLAS.hpp"
 #include <stdexcept>
 #include "config.h"
-#ifdef HAVE_MKL
-#include "oneapi/mkl/blas.hpp"
-#endif
+// #ifdef HAVE_MKL
+// #include "oneapi/mkl/blas.hpp"
+// #endif
 #if !defined(OPENMP_NO_COMPLEX)
 #include "ompReductionComplex.hpp"
 #endif
@@ -49,44 +49,56 @@ ompBLAS_status gemm_impl(ompBLAS_handle& handle,
                          const int ldc)
 {
   // TODO: this assumes row major
-#ifdef HAVE_MKL
-  return oneapi::mkl::blas::gemm(handle, convertTransEnum(transa), convertTransEnum(transb), m, n, k, alpha, A, lda, B,
-                                 ldb, beta, C, ldc);
-#else
+  // #ifdef HAVE_MKL
+  //   return oneapi::mkl::blas::gemm(handle, convertTransEnum(transa), convertTransEnum(transb), m, n, k, alpha, A, lda, B,
+  //                                  ldb, beta, C, ldc);
+  // #else
   if (transa == 'T' && transb == 'N') //A(ji) * B(jk) -> C(ik)
   {
     PRAGMA_OFFLOAD("omp target teams distribute collapse(2) num_teams(M * N) is_device_ptr(A, B, C)")
     for (size_t m = 0; m < M; m++)
       for (size_t n = 0; n < N; n++)
+      {
+        C[m * ldc + n] *= beta;
         for (size_t k = 0; k < K; k++)
-          C[m * ldc + n] = beta * C[m * ldc + n] + alpha * A[lda * k + m] * B[ldb * k + n];
+          C[m * ldc + n] += alpha * A[lda * k + m] * B[ldb * k + n];
+      }
   }
   else if (transa == 'T' && transb == 'T')
   {
     PRAGMA_OFFLOAD("omp target teams distribute collapse(2) num_teams(M * N) is_device_ptr(A, B, C)")
     for (size_t m = 0; m < M; m++)
       for (size_t n = 0; n < N; n++)
+      {
+        C[m * ldc + n] *= beta;
         for (size_t k = 0; k < K; k++)
-          C[m * ldc + n] = beta * C[m * ldc + n] + alpha * A[lda * k + m] * B[ldb * n + k];
+          C[m * ldc + n] += alpha * A[lda * k + m] * B[ldb * n + k];
+      }
   }
   else if (transa == 'N' && transb == 'T')
   {
     PRAGMA_OFFLOAD("omp target teams distribute collapse(2) num_teams(M * N) is_device_ptr(A, B, C)")
     for (size_t m = 0; m < M; m++)
       for (size_t n = 0; n < N; n++)
+      {
+        C[m * ldc + n] *= beta;
         for (size_t k = 0; k < K; k++)
-          C[m * ldc + n] = beta * C[m * ldc + n] + alpha * A[lda * m + k] * B[ldb * n + k];
+          C[m * ldc + n] += alpha * A[lda * m + k] * B[ldb * n + k];
+      }
   }
   else if (transa == 'N' && transb == 'N')
   {
     PRAGMA_OFFLOAD("omp target teams distribute collapse(2) num_teams(M * N) is_device_ptr(A, B, C)")
     for (size_t m = 0; m < M; m++)
       for (size_t n = 0; n < N; n++)
+      {
+        C[m * ldc + n] *= beta;
         for (size_t k = 0; k < K; k++)
-          C[m * ldc + n] = beta * C[m * ldc + n] + alpha * A[lda * m + k] * B[ldb * k + n];
+          C[m * ldc + n] += alpha * A[lda * m + k] * B[ldb * k + n];
+      }
   }
 
-#endif
+  // #endif
   return 0;
 }
 
