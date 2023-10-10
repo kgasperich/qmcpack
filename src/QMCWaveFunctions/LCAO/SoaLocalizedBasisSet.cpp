@@ -316,6 +316,10 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateV_mvp2(const RefVectorWithLeade
 
   auto& vps_leader = vp_list.getLeader();
 
+  auto& coordinates_leader = static_cast<const RealSpacePositionsOMPTarget&>(vps_leader.getCoordinates());
+  auto& mw_rsoa_dev_ptrs   = coordinates_leader.getMultiWalkerRSoADevicePtrs();
+  const size_t np_padded   = vps_leader.getCoordinates().getAllParticlePos().capacity();
+
 
   const auto dt_list(vps_leader.extractDTRefList_vp(vp_list, myTableIndex));
   const auto coordR_list(vps_leader.extractCoordsRefList_vp(vp_list));
@@ -326,6 +330,8 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateV_mvp2(const RefVectorWithLeade
   Tv_list.resize(3 * NumCenters * nVPs);
   displ_list_tr.resize(3 * NumCenters * nVPs);
 
+  // TODO: need one more level of indirection for offload?
+  // need to index into walkers/vps, but need walker num for distance table
   size_t index = 0; // flattened (ragged) nw x nvp
   for (size_t iw = 0; iw < vp_list.size(); iw++)
     for (int iat = 0; iat < vp_list[iw].getTotalNum(); iat++)
