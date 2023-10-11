@@ -61,7 +61,7 @@ struct SoaSphericalTensor
 
   ///compute Ylm
   void evaluate_bare(T x, T y, T z, T* Ylm) const;
-  void evaluate_bare_impl(T x, T y, T z, T* Ylm, const size_t Lmax_, const T* FacL, const T* FacLM) const;
+  static void evaluate_bare_impl(T x, T y, T z, T* Ylm, const size_t Lmax_, const T* FacL, const T* FacLM);
 
   ///compute Ylm
   inline void evaluateV(T x, T y, T z, T* Ylm) const
@@ -135,7 +135,7 @@ struct SoaSphericalTensor
   void evaluateVGHGH(T x, T y, T z);
 
   ///returns the index/locator for (\f$l,m\f$) combo, \f$ l(l+1)+m \f$
-  inline int index(int l, int m) const { return (l * (l + 1)) + m; }
+  static inline int index(int l, int m) { return (l * (l + 1)) + m; }
 
   /** return the starting address of the component
    *
@@ -228,7 +228,7 @@ inline void SoaSphericalTensor<T>::evaluate_bare_impl(const T x,
                                                       T* restrict Ylm,
                                                       const size_t Lmax_,
                                                       const T* FactorL_ptr,
-                                                      const T* FactorLM_ptr) const
+                                                      const T* FactorLM_ptr)
 {
   constexpr T czero(0);
   constexpr T cone(1);
