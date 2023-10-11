@@ -503,7 +503,7 @@ void LCAOrbitalSet::mw_evaluateValueVPsImplGEMM(const RefVectorWithLeader<SPOSet
   vp_basis_v_mw.resize(nVPs, BasisSetSize);
 
   auto bs_list = spo_leader.extractBasRefList(spo_list);
-  myBasisSet->mw_evaluateValueVPs2(bs_list, vp_list, vp_basis_v_mw);
+  myBasisSet->mw_evaluateValueVPs(bs_list, vp_list, vp_basis_v_mw);
 
   auto* vp_basis_devptr = vp_basis_v_mw.device_data_at(0, 0);
   auto* vp_phi_devptr   = vp_phi_v.device_data_at(0, 0);

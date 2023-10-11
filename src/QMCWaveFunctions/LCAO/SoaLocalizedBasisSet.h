@@ -117,20 +117,13 @@ public:
   void mw_evaluateValue(const RefVectorWithLeader<ParticleSet>& P_list, int iat, OffloadMWVArray& v) override;
 
   /** compute V using packed array with all walkers 
-   * @param P_list list of quantum particleset (one for each walker)
-   * @param iat active particle
-   * @param v   Array(n_walkers, BasisSetSize)
-   */
-  void mw_evaluateValueVPs2(RefVectorWithLeader<SoaBasisSetBase<ORBT>>& bs_list,
-                            const RefVectorWithLeader<const VirtualParticleSet>& vp_list,
-                            OffloadMWVArray& v) override;
-
-  /** compute V using packed array with all walkers 
+   * @param bs_list list of basis sets (one for each walker)
    * @param vp_list list of quantum virtual particleset (one for each walker)
    * @param v   Array(n_walkers, BasisSetSize)
    */
-  void mw_evaluateValueVPs(const RefVectorWithLeader<const VirtualParticleSet>& vp_list, OffloadMWVArray& v) override;
-
+  void mw_evaluateValueVPs(RefVectorWithLeader<SoaBasisSetBase<ORBT>>& bs_list,
+                           const RefVectorWithLeader<const VirtualParticleSet>& vp_list,
+                           OffloadMWVArray& v) override;
 
   /** compute VGL using packed array with all walkers 
    * @param P_list list of quantum particleset (one for each walker)
@@ -170,11 +163,9 @@ public:
 
   /** same as evaluateV, but specializes in Virtual ParticleSet.
    */
-  void mw_evaluateV_mvp(const RefVectorWithLeader<const VirtualParticleSet>& vp_list, OffloadMWVArray& vals) override;
-
-  void mw_evaluateV_mvp2(const RefVectorWithLeader<SoaBasisSetBase<ORBT>>& bs_list,
-                         const RefVectorWithLeader<const VirtualParticleSet>& vp_list,
-                         OffloadMWVArray& vals) override;
+  void mw_evaluateV_mvp(const RefVectorWithLeader<SoaBasisSetBase<ORBT>>& bs_list,
+                        const RefVectorWithLeader<const VirtualParticleSet>& vp_list,
+                        OffloadMWVArray& vals) override;
 
   void evaluateGradSourceV(const ParticleSet& P, int iat, const ParticleSet& ions, int jion, vgl_type& vgl) override;
 
