@@ -828,10 +828,78 @@ struct SoaAtomicBasisSet
     {
       ScopedTimer local(rnl_timer_);
       MultiRnl.batched_evaluateVGL(r, rnl_vgl, Rmax);
+
+      // TEST
+      RealType* restrict phi   = tempS.data(0);
+      RealType* restrict dphi  = tempS.data(1);
+      RealType* restrict d2phi = tempS.data(2);
+      r.updateFrom();
+      rnl_vgl.updateFrom();
+      for (size_t i_e = 0; i_e < nElec; i_e++)
+      {
+        for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
+        {
+          RealType r_i = r(i_e, i_xyz);
+          if (r_i <= Rmax)
+          {
+            MultiRnl.evaluate(r_i, phi, dphi, d2phi);
+            for (size_t inl = 0; inl < nRnl; inl++)
+            {
+              assert(rnl_vgl(0, i_e, i_xyz, inl) == phi[inl]);
+              assert(rnl_vgl(1, i_e, i_xyz, inl) == dphi[inl]);
+              assert(rnl_vgl(2, i_e, i_xyz, inl) == d2phi[inl]);
+            }
+          }
+          else
+          {
+            for (size_t inl = 0; inl < nRnl; inl++)
+              for (size_t ivgl = 0; ivgl < 3; ivgl++)
+                assert(rnl_vgl(ivgl, i_e, i_xyz, inl) == 0.0);
+          }
+        }
+      }
     }
     {
       ScopedTimer local(ylm_timer_);
       Ylm.batched_evaluateVGL(dr, ylm_vgl);
+
+
+      dr.updateFrom();
+      ylm_vgl.updateFrom();
+
+      const RealType* restrict ylm_v = Ylm[0]; //value
+      const RealType* restrict ylm_x = Ylm[1]; //gradX
+      const RealType* restrict ylm_y = Ylm[2]; //gradY
+      const RealType* restrict ylm_z = Ylm[3]; //gradZ
+      const RealType* restrict ylm_l = Ylm[4]; //lap
+      for (size_t i_e = 0; i_e < nElec; i_e++)
+      {
+        for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
+        {
+          RealType r_i = r(i_e, i_xyz);
+          RealType x   = -dr(i_e, i_xyz, 0);
+          RealType y   = -dr(i_e, i_xyz, 1);
+          RealType z   = -dr(i_e, i_xyz, 2);
+          // if (r_i <= Rmax)
+          // {
+            Ylm.evaluateVGL(x, y, z);
+            for (size_t ilm = 0; ilm < nYlm; ilm++)
+            {
+              assert(ylm_vgl(0, i_e, i_xyz, ilm) == ylm_v[ilm]);
+              assert(ylm_vgl(1, i_e, i_xyz, ilm) == ylm_x[ilm]);
+              assert(ylm_vgl(2, i_e, i_xyz, ilm) == ylm_y[ilm]);
+              assert(ylm_vgl(3, i_e, i_xyz, ilm) == ylm_z[ilm]);
+              assert(ylm_vgl(4, i_e, i_xyz, ilm) == ylm_l[ilm]);
+            }
+          // }
+          // else
+          // {
+          //   for (size_t ilm = 0; ilm < nYlm; ilm++)
+          //     for (size_t ivgl = 0; ivgl < 5; ivgl++)
+          //       assert(ylm_vgl(ivgl, i_e, i_xyz, ilm) == 0.0);
+          // }
+        }
+      }
     }
 
 
