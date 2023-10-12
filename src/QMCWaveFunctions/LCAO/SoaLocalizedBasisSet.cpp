@@ -274,7 +274,7 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateVGL(RefVectorWithLeader<SoaBasi
   PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(3) is_device_ptr(basis_vgl_mw_devptr) ")
   for (size_t i = 0; i < 5; i++) // TODO: get DIM_VGL from qmctraits?
     for (size_t iw = 0; iw < nw; iw++)
-      for (size_t ib = 0; ib < BasisSetSize; ++ib)
+      for (size_t ib = 0; ib < nBasTot; ++ib)
         basis_vgl_mw_devptr[ib + nBasTot * (iw + nw * i)] = 0;
 
   // TODO: group/sort centers by species?

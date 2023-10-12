@@ -120,7 +120,7 @@ struct SoaSphericalTensor
 
 
     PRAGMA_OFFLOAD("omp target teams distribute parallel for \
-                    map(to:flm_ptr[:Nlm], fl_ptr[:Lmax+1], NormFactor_ptr[:Nlm]) \
+                    map(always, to:flm_ptr[:Nlm], fl_ptr[:Lmax+1], NormFactor_ptr[:Nlm]) \
                     is_device_ptr(xyz_devptr, Ylm_devptr)")
     for (size_t ir = 0; ir < nR; ir++)
     {
@@ -161,7 +161,7 @@ struct SoaSphericalTensor
 
 
     PRAGMA_OFFLOAD("omp target teams distribute parallel for \
-                    map(to:flm_ptr[:Nlm], fl_ptr[:Lmax+1], NormFactor_ptr[:Nlm], f2l_ptr[:Lmax+1]) \
+                    map(always, to:flm_ptr[:Nlm], fl_ptr[:Lmax+1], NormFactor_ptr[:Nlm], f2l_ptr[:Lmax+1]) \
                     is_device_ptr(xyz_devptr, Ylm_vgl_devptr)")
     for (size_t ir = 0; ir < nR; ir++)
       evaluateVGL_impl(xyz_devptr[0 + 3 * ir], xyz_devptr[1 + 3 * ir], xyz_devptr[2 + 3 * ir],

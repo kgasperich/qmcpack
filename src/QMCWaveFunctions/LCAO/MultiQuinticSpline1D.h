@@ -214,7 +214,7 @@ public:
 
 
     PRAGMA_OFFLOAD("omp target teams distribute parallel for \
-                    map(to:first_deriv_ptr[:num_splines_], coeff_ptr[:coefsize]) \
+                    map(always, to:first_deriv_ptr[:num_splines_], coeff_ptr[:coefsize]) \
                     is_device_ptr(r_devptr, u_devptr)")
     for (size_t ir = 0; ir < nR; ir++)
     {
@@ -286,7 +286,7 @@ public:
     constexpr T c20(20);
 
     PRAGMA_OFFLOAD("omp target teams distribute parallel for \
-                    map(to:first_deriv_ptr[:num_splines_], coeff_ptr[:coefsize]) \
+                    map(always, to:first_deriv_ptr[:num_splines_], coeff_ptr[:coefsize]) \
                     is_device_ptr(r_devptr, u_devptr, du_devptr, d2u_devptr)")
     for (size_t ir = 0; ir < nR; ir++)
     {

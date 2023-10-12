@@ -750,7 +750,7 @@ struct SoaAtomicBasisSet
     // should just do this once and store it (like with phase)
     {
       ScopedTimer local(pbc_timer_);
-      PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) map(to:latR_ptr[:9]) \
+      PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) map(always, to:latR_ptr[:9]) \
         is_device_ptr(dr_pbc_devptr) ")
       for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
       {
@@ -787,7 +787,7 @@ struct SoaAtomicBasisSet
 #else
       auto* SuperTwist_ptr = SuperTwist.data();
 
-      PRAGMA_OFFLOAD("omp target teams distribute parallel for map(to:SuperTwist_ptr[:9]) \
+      PRAGMA_OFFLOAD("omp target teams distribute parallel for map(always, to:SuperTwist_ptr[:9]) \
 		    is_device_ptr(Tv_list_devptr, correctphase_devptr) ")
       for (size_t i_vp = 0; i_vp < nElec; i_vp++)
       {
@@ -852,7 +852,7 @@ struct SoaAtomicBasisSet
     {
       ScopedTimer local_timer(psi_timer_);
       PRAGMA_OFFLOAD(
-          "omp target teams distribute parallel for collapse(2) map(to:phase_fac_ptr[:Nxyz], LM_ptr[:BasisSetSize], NL_ptr[:BasisSetSize]) \
+          "omp target teams distribute parallel for collapse(2) map(always, to:phase_fac_ptr[:Nxyz], LM_ptr[:BasisSetSize], NL_ptr[:BasisSetSize]) \
 		       is_device_ptr(ylm_v_devptr, ylm_x_devptr, ylm_y_devptr, ylm_z_devptr, ylm_l_devptr, \
                          phi_devptr, dphi_devptr, d2phi_devptr, \
                          psi_devptr, dpsi_x_devptr, dpsi_y_devptr, dpsi_z_devptr, d2psi_devptr, \
@@ -988,7 +988,7 @@ struct SoaAtomicBasisSet
     // should just do this once and store it (like with phase)
     {
       ScopedTimer local(pbc_timer_);
-      PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) map(to:latR_ptr[:9]) \
+      PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) map(always, to:latR_ptr[:9]) \
         is_device_ptr(dr_pbc_devptr) ")
       for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
       {
@@ -1024,7 +1024,7 @@ struct SoaAtomicBasisSet
 #else
       auto* SuperTwist_ptr = SuperTwist.data();
 
-      PRAGMA_OFFLOAD("omp target teams distribute parallel for map(to:SuperTwist_ptr[:9]) \
+      PRAGMA_OFFLOAD("omp target teams distribute parallel for map(always, to:SuperTwist_ptr[:9]) \
 		    is_device_ptr(Tv_list_devptr, correctphase_devptr) ")
       for (size_t i_vp = 0; i_vp < nElec; i_vp++)
       {
@@ -1111,7 +1111,7 @@ struct SoaAtomicBasisSet
     {
       ScopedTimer local_timer(psi_timer_);
       PRAGMA_OFFLOAD(
-          "omp target teams distribute parallel for collapse(2) map(to:phase_fac_ptr[:Nxyz], LM_ptr[:BasisSetSize], NL_ptr[:BasisSetSize]) \
+          "omp target teams distribute parallel for collapse(2) map(always, to:phase_fac_ptr[:Nxyz], LM_ptr[:BasisSetSize], NL_ptr[:BasisSetSize]) \
 		    is_device_ptr(ylm_devptr, rnl_devptr, psi_devptr, correctphase_devptr) ")
       for (size_t i_vp = 0; i_vp < nElec; i_vp++)
       {
