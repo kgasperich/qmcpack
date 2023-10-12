@@ -51,9 +51,10 @@ struct SoaSphericalTensor
   aligned_vector<T> Factor2L;
   ///composite
   VectorSoaContainer<T, 5> cYlm;
-  using xyz_type      = TinyVector<T, 3>;
-  using OffloadArray2 = Array<T, 2, OffloadPinnedAllocator<T>>;
-  using OffloadArray3 = Array<T, 3, OffloadPinnedAllocator<T>>;
+  using xyz_type       = TinyVector<T, 3>;
+  using OffloadArray2D = Array<T, 2, OffloadPinnedAllocator<T>>;
+  using OffloadArray3D = Array<T, 3, OffloadPinnedAllocator<T>>;
+  using OffloadArray4D = Array<T, 4, OffloadPinnedAllocator<T>>;
 
   explicit SoaSphericalTensor(const int l_max, bool addsign = false);
 
@@ -62,6 +63,16 @@ struct SoaSphericalTensor
   ///compute Ylm
   void evaluate_bare(T x, T y, T z, T* Ylm) const;
   static void evaluate_bare_impl(T x, T y, T z, T* Ylm, const size_t Lmax_, const T* FacL, const T* FacLM);
+  static void evaluateVGL_impl(const T x,
+                               const T y,
+                               const T z,
+                               T* restrict Ylm_vgl,
+                               const size_t Lmax_,
+                               const T* FactorL_ptr,
+                               const T* FactorLM_ptr,
+                               const T* Factor2L_ptr,
+                               const T* NormFactor_ptr,
+                               const size_t offset);
 
   ///compute Ylm
   inline void evaluateV(T x, T y, T z, T* Ylm) const
@@ -83,7 +94,13 @@ struct SoaSphericalTensor
         Ylm[ir * nlm + i] *= NormFactor[i];
   }
 
-  inline void batched_evaluateV(OffloadArray3& xyz, OffloadArray3& Ylm) const
+  /**
+   * @brief evaluate VGL for multiple electrons and multiple pbc images
+   * 
+   * @param [in] xyz electron positions [Nelec, Npbc, 3(x,y,z)]
+   * @param [out] Ylm Spherical tensor elements [Nelec, Npbc, Nlm]
+  */
+  inline void batched_evaluateV(OffloadArray3D& xyz, OffloadArray3D& Ylm) const
   {
     const size_t nElec = xyz.size(0);
     const size_t Npbc  = xyz.size(1); // number of PBC images
@@ -102,18 +119,53 @@ struct SoaSphericalTensor
     auto* NormFactor_ptr = NormFactor.data();
 
 
-    PRAGMA_OFFLOAD(
-        "omp target teams distribute parallel for map(to:flm_ptr[:Nlm], fl_ptr[:Lmax+1], NormFactor_ptr[:Nlm])")
+    PRAGMA_OFFLOAD("omp target teams distribute parallel for \
+                    map(to:flm_ptr[:Nlm], fl_ptr[:Lmax+1], NormFactor_ptr[:Nlm]) \
+                    is_device_ptr(xyz_devptr, Ylm_devptr)")
     for (size_t ir = 0; ir < nR; ir++)
     {
       evaluate_bare_impl(xyz_devptr[0 + 3 * ir], xyz_devptr[1 + 3 * ir], xyz_devptr[2 + 3 * ir],
                          Ylm_devptr + (ir * Nlm), Lmax, fl_ptr, flm_ptr);
-      // evaluate_bare_impl(xyz[0 + 3 * ir], xyz[1 + 3 * ir], xyz[2 + 3 * ir], Ylm + (ir * nlm));
-      // for (size_t ir = 0; ir < nr; ir++)
-      // for (int i = 0, nl = cYlm.size(); i < nl; i++)
       for (int i = 0; i < Nlm; i++)
         Ylm_devptr[ir * Nlm + i] *= NormFactor_ptr[i];
     }
+  }
+
+  /**
+   * @brief evaluate VGL for multiple electrons and multiple pbc images
+   * 
+   * @param [in] xyz electron positions [Nelec, Npbc, 3(x,y,z)]
+   * @param [out] Ylm_vgl Spherical tensor elements [5(v, gx, gy, gz, lapl), Nelec, Npbc, Nlm]
+  */
+  inline void batched_evaluateVGL(OffloadArray3D& xyz, OffloadArray4D& Ylm_vgl) const
+  {
+    const size_t nElec = xyz.size(0);
+    const size_t Npbc  = xyz.size(1); // number of PBC images
+    assert(xyz.size(2) == 3);
+
+    assert(Ylm_vgl.size(0) == 5);
+    assert(Ylm_vgl.size(1) == nElec);
+    assert(Ylm_vgl.size(2) == Npbc);
+    const size_t Nlm = Ylm_vgl.size(3);
+    assert(NormFactor.size() == Nlm);
+
+    size_t nR     = nElec * Npbc; // total number of positions to evaluate
+    size_t offset = Nlm * nR;     // stride for v/gx/gy/gz/l
+
+    auto* xyz_devptr     = xyz.device_data();
+    auto* Ylm_vgl_devptr = Ylm_vgl.device_data();
+    auto* flm_ptr        = FactorLM.data();
+    auto* fl_ptr         = FactorL.data();
+    auto* f2l_ptr        = Factor2L.data();
+    auto* NormFactor_ptr = NormFactor.data();
+
+
+    PRAGMA_OFFLOAD("omp target teams distribute parallel for \
+                    map(to:flm_ptr[:Nlm], fl_ptr[:Lmax+1], NormFactor_ptr[:Nlm], f2l_ptr[:Lmax+1]) \
+                    is_device_ptr(xyz_devptr, Ylm_devptr)")
+    for (size_t ir = 0; ir < nR; ir++)
+      evaluateVGL_impl(xyz_devptr[0 + 3 * ir], xyz_devptr[1 + 3 * ir], xyz_devptr[2 + 3 * ir],
+                       Ylm_vgl_devptr + (ir * Nlm), Lmax, fl_ptr, flm_ptr, f2l_ptr, NormFactor_ptr, offset);
   }
 
   ///compute Ylm
@@ -221,6 +273,7 @@ inline SoaSphericalTensor<T>::SoaSphericalTensor(const int l_max, bool addsign) 
 }
 
 
+PRAGMA_OFFLOAD("omp declare target")
 template<typename T>
 inline void SoaSphericalTensor<T>::evaluate_bare_impl(const T x,
                                                       const T y,
@@ -321,6 +374,7 @@ inline void SoaSphericalTensor<T>::evaluate_bare_impl(const T x,
   //for (int i=0; i<Ylm.size(); i++)
   //  Ylm[i]*= NormFactor[i];
 }
+PRAGMA_OFFLOAD("omp end declare target")
 
 template<typename T>
 inline void SoaSphericalTensor<T>::evaluate_bare(T x, T y, T z, T* restrict Ylm) const
@@ -416,6 +470,113 @@ inline void SoaSphericalTensor<T>::evaluate_bare(T x, T y, T z, T* restrict Ylm)
   //for (int i=0; i<Ylm.size(); i++)
   //  Ylm[i]*= NormFactor[i];
 }
+
+PRAGMA_OFFLOAD("omp declare target")
+template<typename T>
+inline void SoaSphericalTensor<T>::evaluateVGL_impl(const T x,
+                                                    const T y,
+                                                    const T z,
+                                                    T* restrict Ylm_vgl,
+                                                    const size_t Lmax_,
+                                                    const T* FactorL_ptr,
+                                                    const T* FactorLM_ptr,
+                                                    const T* Factor2L_ptr,
+                                                    const T* NormFactor_ptr,
+                                                    const size_t offset)
+{
+  T* restrict Ylm = Ylm_vgl;
+  // T* restrict Ylm = cYlm.data(0);
+  evaluate_bare_impl(x, y, z, Ylm, Lmax_, FactorL_ptr, FactorLM_ptr);
+  const size_t Nlm = (Lmax_ + 1) * (Lmax_ + 1);
+
+  constexpr T czero(0);
+  constexpr T ahalf(0.5);
+  T* restrict gYlmX = Ylm_vgl + offset * 1;
+  T* restrict gYlmY = Ylm_vgl + offset * 2;
+  T* restrict gYlmZ = Ylm_vgl + offset * 3;
+  T* restrict lYlm  = Ylm_vgl + offset * 4; // just need to set to zero
+
+  // Calculating Gradient now//
+  for (int l = 1; l <= Lmax_; l++)
+  {
+    //T fac = ((T) (2*l+1))/(2*l-1);
+    T fac = Factor2L_ptr[l];
+    for (int m = -l; m <= l; m++)
+    {
+      int lm = index(l - 1, 0);
+      T gx, gy, gz, dpr, dpi, dmr, dmi;
+      const int ma = std::abs(m);
+      const T cp   = std::sqrt(fac * (l - ma - 1) * (l - ma));
+      const T cm   = std::sqrt(fac * (l + ma - 1) * (l + ma));
+      const T c0   = std::sqrt(fac * (l - ma) * (l + ma));
+      gz           = (l > ma) ? c0 * Ylm[lm + m] : czero;
+      if (l > ma + 1)
+      {
+        dpr = cp * Ylm[lm + ma + 1];
+        dpi = cp * Ylm[lm - ma - 1];
+      }
+      else
+      {
+        dpr = czero;
+        dpi = czero;
+      }
+      if (l > 1)
+      {
+        switch (ma)
+        {
+        case 0:
+          dmr = -cm * Ylm[lm + 1];
+          dmi = cm * Ylm[lm - 1];
+          break;
+        case 1:
+          dmr = cm * Ylm[lm];
+          dmi = czero;
+          break;
+        default:
+          dmr = cm * Ylm[lm + ma - 1];
+          dmi = cm * Ylm[lm - ma + 1];
+        }
+      }
+      else
+      {
+        dmr = cm * Ylm[lm];
+        dmi = czero;
+        //dmr = (l==1) ? cm*Ylm[lm]:0.0;
+        //dmi = 0.0;
+      }
+      if (m < 0)
+      {
+        gx = ahalf * (dpi - dmi);
+        gy = -ahalf * (dpr + dmr);
+      }
+      else
+      {
+        gx = ahalf * (dpr - dmr);
+        gy = ahalf * (dpi + dmi);
+      }
+      lm = index(l, m);
+      if (ma)
+      {
+        gYlmX[lm] = NormFactor_ptr[lm] * gx;
+        gYlmY[lm] = NormFactor_ptr[lm] * gy;
+        gYlmZ[lm] = NormFactor_ptr[lm] * gz;
+      }
+      else
+      {
+        gYlmX[lm] = gx;
+        gYlmY[lm] = gy;
+        gYlmZ[lm] = gz;
+      }
+    }
+  }
+  for (int i = 0; i < Nlm; i++)
+  {
+    Ylm[i] *= NormFactor_ptr[i];
+    lYlm[i] = 0;
+  }
+  //for (int i=0; i<Ylm.size(); i++) gradYlm[i]*= NormFactor[i];
+}
+PRAGMA_OFFLOAD("omp end declare target")
 
 template<typename T>
 inline void SoaSphericalTensor<T>::evaluateVGL(T x, T y, T z)

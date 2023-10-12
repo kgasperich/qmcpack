@@ -99,11 +99,12 @@ template<typename T>
 class MultiQuinticSpline1D
 {
 public:
-  using RealType      = T;
-  using GridType      = OneDimGridBase<T>;
-  using CoeffType     = Matrix<T, aligned_allocator<T>>;
-  using OffloadArray2 = Array<T, 2, OffloadPinnedAllocator<T>>;
-  using OffloadArray3 = Array<T, 3, OffloadPinnedAllocator<T>>;
+  using RealType       = T;
+  using GridType       = OneDimGridBase<T>;
+  using CoeffType      = Matrix<T, aligned_allocator<T>>;
+  using OffloadArray2D = Array<T, 2, OffloadPinnedAllocator<T>>;
+  using OffloadArray3D = Array<T, 3, OffloadPinnedAllocator<T>>;
+  using OffloadArray4D = Array<T, 4, OffloadPinnedAllocator<T>>;
 
 private:
   ///number of splines
@@ -189,7 +190,7 @@ public:
     }
   }
 
-  inline void batched_evaluate(OffloadArray2& r, OffloadArray3& u, T Rmax) const
+  inline void batched_evaluate(OffloadArray2D& r, OffloadArray3D& u, T Rmax) const
   {
     const size_t nElec = r.size(0);
     const size_t Nxyz  = r.size(1); // number of PBC images
@@ -212,8 +213,9 @@ public:
     const size_t coefsize = coeffs->size();
 
 
-    PRAGMA_OFFLOAD("omp target teams distribute parallel for map(always, to:first_deriv_ptr[:num_splines_], \
-    coeff_ptr[:coefsize])")
+    PRAGMA_OFFLOAD("omp target teams distribute parallel for \
+                    map(to:first_deriv_ptr[:num_splines_], coeff_ptr[:coefsize]) \
+                    is_device_ptr(r_devptr, u_devptr)")
     for (size_t ir = 0; ir < nR; ir++)
     {
       if (r_devptr[ir] >= Rmax)
@@ -246,6 +248,91 @@ public:
         const T* restrict f = coeff_ptr + nCols * (offset + 5);
         for (size_t i = 0; i < num_splines_; ++i)
           u_devptr[ir * nRnl + i] = a[i] + cL * (b[i] + cL * (c[i] + cL * (d[i] + cL * (e[i] + cL * f[i]))));
+      }
+    }
+  }
+
+  inline void batched_evaluateVGL(OffloadArray2D& r, OffloadArray4D& vgl, T Rmax) const
+  {
+    const size_t nElec = r.size(0);
+    const size_t Nxyz  = r.size(1); // number of PBC images
+    assert(3 == vgl.size(0));
+    assert(nElec == vgl.size(1));
+    assert(Nxyz == vgl.size(2));
+    const size_t nRnl = vgl.size(3);  // number of splines
+    const size_t nR   = nElec * Nxyz; // total number of positions to evaluate
+
+    auto* first_deriv_ptr = first_deriv.data();
+
+    double OneOverLogDelta = myGrid.OneOverLogDelta;
+    T lower_bound          = myGrid.lower_bound;
+    T dlog_ratio           = myGrid.LogDelta;
+
+    auto* r_devptr   = r.device_data();
+    auto* u_devptr   = vgl.device_data_at(0, 0, 0, 0);
+    auto* du_devptr  = vgl.device_data_at(1, 0, 0, 0);
+    auto* d2u_devptr = vgl.device_data_at(2, 0, 0, 0);
+
+    auto* coeff_ptr       = coeffs->data();
+    const size_t nCols    = coeffs->cols();
+    const size_t coefsize = coeffs->size();
+
+    constexpr T ctwo(2);
+    constexpr T cthree(3);
+    constexpr T cfour(4);
+    constexpr T cfive(5);
+    constexpr T csix(6);
+    constexpr T c12(12);
+    constexpr T c20(20);
+
+    PRAGMA_OFFLOAD("omp target teams distribute parallel for \
+                    map(to:first_deriv_ptr[:num_splines_], coeff_ptr[:coefsize]) \
+                    is_device_ptr(r_devptr, u_devptr, du_devptr, d2u_devptr)")
+    for (size_t ir = 0; ir < nR; ir++)
+    {
+      if (r_devptr[ir] >= Rmax)
+      {
+        for (size_t i = 0; i < num_splines_; ++i)
+        {
+          u_devptr[ir * nRnl + i]   = 0.0;
+          du_devptr[ir * nRnl + i]  = 0.0;
+          d2u_devptr[ir * nRnl + i] = 0.0;
+        }
+      }
+      else if (r_devptr[ir] < lower_bound)
+      {
+        const T dr          = r_devptr[ir] - lower_bound;
+        const T* restrict a = coeff_ptr;
+        // const T* restrict a = (*coeffs)[0];
+        for (size_t i = 0; i < num_splines_; ++i)
+        {
+          u_devptr[ir * nRnl + i]   = a[i] + first_deriv_ptr[i] * dr;
+          du_devptr[ir * nRnl + i]  = first_deriv_ptr[i];
+          d2u_devptr[ir * nRnl + i] = 0.0;
+        }
+      }
+      else
+      {
+        int loc;
+        const auto cL = LogGridLight<T>::getCL(r_devptr[ir], loc, OneOverLogDelta, lower_bound, dlog_ratio);
+        // const auto cL       = myGrid.getCLForQuintic(r_list[ir], loc);
+        const size_t offset = loc * 6;
+        //coeffs is an OhmmsMatrix and [] is a row access operator
+        //returning a pointer to 'row' which is normal type pointer []
+        // const T* restrict a = (*coeffs)[offset + 0];
+        const T* restrict a = coeff_ptr + nCols * (offset + 0);
+        const T* restrict b = coeff_ptr + nCols * (offset + 1);
+        const T* restrict c = coeff_ptr + nCols * (offset + 2);
+        const T* restrict d = coeff_ptr + nCols * (offset + 3);
+        const T* restrict e = coeff_ptr + nCols * (offset + 4);
+        const T* restrict f = coeff_ptr + nCols * (offset + 5);
+        for (size_t i = 0; i < num_splines_; ++i)
+        {
+          u_devptr[ir * nRnl + i] = a[i] + cL * (b[i] + cL * (c[i] + cL * (d[i] + cL * (e[i] + cL * f[i]))));
+          du_devptr[ir * nRnl + i] =
+              b[i] + cL * (ctwo * c[i] + cL * (cthree * d[i] + cL * (cfour * e[i] + cL * f[i] * cfive)));
+          d2u_devptr[ir * nRnl + i] = ctwo * c[i] + cL * (csix * d[i] + cL * (c12 * e[i] + cL * f[i] * c20));
+        }
       }
     }
   }

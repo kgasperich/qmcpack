@@ -188,34 +188,103 @@ void SoaLocalizedBasisSet<COT, ORBT>::evaluateVGL(const ParticleSet& P, int iat,
   }
 }
 
+// template<class COT, typename ORBT>
+// void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateVGL(const RefVectorWithLeader<ParticleSet>& P_list,
+//                                                      int iat,
+//                                                      OffloadMWVGLArray& vgl_v)
+// {
+//   for (size_t iw = 0; iw < P_list.size(); iw++)
+//   {
+//     const auto& IonID(ions_.GroupID);
+//     const auto& coordR  = P_list[iw].activeR(iat);
+//     const auto& d_table = P_list[iw].getDistTableAB(myTableIndex);
+//     const auto& dist    = (P_list[iw].getActivePtcl() == iat) ? d_table.getTempDists() : d_table.getDistRow(iat);
+//     const auto& displ   = (P_list[iw].getActivePtcl() == iat) ? d_table.getTempDispls() : d_table.getDisplRow(iat);
+
+//     PosType Tv;
+
+//     // number of walkers * BasisSetSize
+//     auto stride = vgl_v.size(1) * BasisSetSize;
+//     assert(BasisSetSize == vgl_v.size(2));
+//     vgl_type vgl_iw(vgl_v.data_at(0, iw, 0), BasisSetSize, stride);
+
+//     for (int c = 0; c < NumCenters; c++)
+//     {
+//       Tv[0] = (ions_.R[c][0] - coordR[0]) - displ[c][0];
+//       Tv[1] = (ions_.R[c][1] - coordR[1]) - displ[c][1];
+//       Tv[2] = (ions_.R[c][2] - coordR[2]) - displ[c][2];
+//       LOBasisSet[IonID[c]]->evaluateVGL(P_list[iw].getLattice(), dist[c], displ[c], BasisOffset[c], vgl_iw, Tv);
+//     }
+//   }
+// }
 template<class COT, typename ORBT>
-void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateVGL(const RefVectorWithLeader<ParticleSet>& P_list,
+void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateVGL(RefVectorWithLeader<SoaBasisSetBase<ORBT>>& bs_list,
+                                                     const RefVectorWithLeader<ParticleSet>& P_list,
                                                      int iat,
-                                                     OffloadMWVGLArray& vgl_v)
+                                                     OffloadMWVGLArray& basis_vgl_mw)
 {
-  for (size_t iw = 0; iw < P_list.size(); iw++)
+  assert(this == &bs_list.getLeader());
+  auto& bs_leader = bs_list.template getCastedLeader<SoaLocalizedBasisSet<COT, ORBT>>();
+
+  assert(basis_vgl_mw.size(0) == 5);
+  const size_t nw      = basis_vgl_mw.size(1);
+  const size_t nBasTot = basis_vgl_mw.size(2);
+  const auto& IonID(bs_leader.ions_.GroupID);
+
+  auto& ps_leader = P_list.getLeader();
+
+  // auto& coordinates_leader = static_cast<const RealSpacePositionsOMPTarget&>(vps_leader.getCoordinates());
+  // auto& mw_rsoa_dev_ptrs   = coordinates_leader.getMultiWalkerRSoADevicePtrs();
+  // const size_t np_padded   = vps_leader.getCoordinates().getAllParticlePos().capacity();
+
+
+  // TODO: check these
+  // const auto dt_list(ps_leader.extractDTRefList(P_list, myTableIndex));
+  // const auto coordR_list(ps_leader.extractCoordsRefList(P_list));
+
+  // make these shared resource? PinnedDualAllocator? OffloadPinnedAllocator?
+  Vector<RealType, OffloadPinnedAllocator<RealType>> Tv_list;
+  Vector<RealType, OffloadPinnedAllocator<RealType>> displ_list_tr;
+  Tv_list.resize(3 * NumCenters * nw);
+  displ_list_tr.resize(3 * NumCenters * nw);
+
+  for (size_t iw = 0; iw < nw; iw++)
   {
-    const auto& IonID(ions_.GroupID);
-    const auto& coordR  = P_list[iw].activeR(iat);
+    // TODO: do this on device
     const auto& d_table = P_list[iw].getDistTableAB(myTableIndex);
-    const auto& dist    = (P_list[iw].getActivePtcl() == iat) ? d_table.getTempDists() : d_table.getDistRow(iat);
+    const auto& coordR  = P_list[iw].activeR(iat);
     const auto& displ   = (P_list[iw].getActivePtcl() == iat) ? d_table.getTempDispls() : d_table.getDisplRow(iat);
-
-    PosType Tv;
-
-    // number of walkers * BasisSetSize
-    auto stride = vgl_v.size(1) * BasisSetSize;
-    assert(BasisSetSize == vgl_v.size(2));
-    vgl_type vgl_iw(vgl_v.data_at(0, iw, 0), BasisSetSize, stride);
-
     for (int c = 0; c < NumCenters; c++)
     {
-      Tv[0] = (ions_.R[c][0] - coordR[0]) - displ[c][0];
-      Tv[1] = (ions_.R[c][1] - coordR[1]) - displ[c][1];
-      Tv[2] = (ions_.R[c][2] - coordR[2]) - displ[c][2];
-      LOBasisSet[IonID[c]]->evaluateVGL(P_list[iw].getLattice(), dist[c], displ[c], BasisOffset[c], vgl_iw, Tv);
+      for (size_t idim = 0; idim < 3; idim++)
+      {
+        Tv_list[idim + 3 * (iw + c * nw)]       = (ions_.R[c][idim] - coordR[idim]) - displ[c][idim];
+        displ_list_tr[idim + 3 * (iw + c * nw)] = displ[c][idim];
+      }
     }
   }
+
+#if defined(QMC_COMPLEX)
+  Tv_list.updateTo();
+#endif
+  displ_list_tr.updateTo();
+
+  // init psi to 0
+  auto* basis_vgl_mw_devptr = basis_vgl_mw.device_data();
+  PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(3) is_device_ptr(basis_vgl_mw_devptr) ")
+  for (size_t i = 0; i < basis_vgl_mw.size(0); i++)
+    for (size_t iw = 0; iw < nw; iw++)
+      for (size_t ib = 0; ib < BasisSetSize; ++ib)
+        basis_vgl_mw_devptr[ib + nBasTot * (iw + nw * i)] = 0;
+
+  // TODO: group/sort centers by species?
+  for (int c = 0; c < NumCenters; c++)
+  {
+    auto atom_bs_list = extractLOBasisRefList(bs_list, IonID[c]);
+    LOBasisSet[IonID[c]]->mw_evaluateVGL(atom_bs_list, ps_leader.getLattice(), basis_vgl_mw, displ_list_tr, Tv_list, nw,
+                                         nBasTot, c, BasisOffset[c], NumCenters);
+  }
+  // basis_vgl_mw.updateFrom();
 }
 
 

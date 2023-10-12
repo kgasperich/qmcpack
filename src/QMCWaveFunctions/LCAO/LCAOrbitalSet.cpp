@@ -431,6 +431,8 @@ void LCAOrbitalSet::mw_evaluateVGL(const RefVectorWithLeader<SPOSet>& spo_list,
   phi_vgl_v.resize(DIM_VGL, spo_list.size(), OrbitalSetSize);
   mw_evaluateVGLImplGEMM(spo_list, P_list, iat, phi_vgl_v);
 
+  phi_vgl_v.updateFrom(); // TODO: remove after offloading below
+
   const size_t nw = phi_vgl_v.size(1);
 
   //TODO: make this cleaner?
@@ -456,10 +458,14 @@ void LCAOrbitalSet::mw_evaluateVGLImplGEMM(const RefVectorWithLeader<SPOSet>& sp
   auto& basis_vgl_mw = spo_leader.mw_mem_handle_.getResource().basis_vgl_mw;
   basis_vgl_mw.resize(DIM_VGL, spo_list.size(), BasisSetSize);
 
+  auto bs_list = spo_leader.extractBasRefList(spo_list);
   {
     ScopedTimer local(basis_timer_);
-    myBasisSet->mw_evaluateVGL(P_list, iat, basis_vgl_mw);
+    myBasisSet->mw_evaluateVGL(bs_list, P_list, iat, basis_vgl_mw);
   }
+
+  int dummy_handle = 0;
+  int success      = 0;
 
   if (Identity)
   {
@@ -467,9 +473,16 @@ void LCAOrbitalSet::mw_evaluateVGLImplGEMM(const RefVectorWithLeader<SPOSet>& sp
     const size_t output_size = phi_vgl_v.size(2);
     const size_t nw          = phi_vgl_v.size(1);
 
-    for (size_t idim = 0; idim < DIM_VGL; idim++)
-      for (int iw = 0; iw < nw; iw++)
-        std::copy_n(basis_vgl_mw.data_at(idim, iw, 0), output_size, phi_vgl_v.data_at(idim, iw, 0));
+    for (size_t iorb = 0; iorb < output_size; iorb++)
+    {
+      success = ompBLAS::copy(dummy_handle, DIM_VGL * nw, basis_vgl_mw.device_data_at(0, 0, iorb), BasisSetSize,
+                              phi_vgl_v.device_data_at(0, 0, iorb), output_size);
+      if (success != 0)
+        throw std::runtime_error("In LCAOrbitalSet::mw_evaluateVGLImplGEMM ompBLAS::copy failed.");
+    }
+    // for (size_t idim = 0; idim < DIM_VGL; idim++)
+    //   for (int iw = 0; iw < nw; iw++)
+    // std::copy_n(basis_vgl_mw.data_at(idim, iw, 0), output_size, phi_vgl_v.data_at(idim, iw, 0));
   }
   else
   {
@@ -477,15 +490,25 @@ void LCAOrbitalSet::mw_evaluateVGLImplGEMM(const RefVectorWithLeader<SPOSet>& sp
     assert(requested_orb_size <= OrbitalSetSize);
     {
       ScopedTimer local(mo_timer_);
-      ValueMatrix C_partial_view(C->data(), requested_orb_size, BasisSetSize);
+      C->updateTo();
+      auto* c_devptr = C->device_data();
+      // ValueMatrix C_partial_view(C->data(), requested_orb_size, BasisSetSize);
       // TODO: make class for general blas interface in Platforms
       // have instance of that class as member of LCAOrbitalSet, call gemm through that
-      BLAS::gemm('T', 'N',
-                 requested_orb_size,        // MOs
-                 spo_list.size() * DIM_VGL, // walkers * DIM_VGL
-                 BasisSetSize,              // AOs
-                 1, C_partial_view.data(), BasisSetSize, basis_vgl_mw.data(), BasisSetSize, 0, phi_vgl_v.data(),
-                 requested_orb_size);
+      success = ompBLAS::gemm(dummy_handle, 'T', 'N',
+                              requested_orb_size,        // MOs
+                              spo_list.size() * DIM_VGL, // walkers * DIM_VGL
+                              BasisSetSize,              // AOs
+                              1, c_devptr, BasisSetSize, basis_vgl_mw.device_data(), BasisSetSize, 0,
+                              phi_vgl_v.device_data(), requested_orb_size);
+      if (success != 0)
+        throw std::runtime_error("In LCAOrbitalSet::mw_evaluateVGLImplGEMM ompBLAS::gemm failed.");
+      // BLAS::gemm('T', 'N',
+      //            requested_orb_size,        // MOs
+      //            spo_list.size() * DIM_VGL, // walkers * DIM_VGL
+      //            BasisSetSize,              // AOs
+      //            1, C_partial_view.data(), BasisSetSize, basis_vgl_mw.data(), BasisSetSize, 0, phi_vgl_v.data(),
+      //            requested_orb_size);
     }
   }
 }
@@ -595,6 +618,7 @@ void LCAOrbitalSet::mw_evaluateDetRatios(const RefVectorWithLeader<SPOSet>& spo_
   vp_phi_v.resize(nVPs, requested_orb_size);
 
   mw_evaluateValueVPsImplGEMM(spo_list, vp_list, vp_phi_v);
+  vp_phi_v.updateFrom(); // TODO: remove after ratios offloaded
 
   ///To be computed on Device through new varuable mw_ratios_list, then copied to ratios_list on host.
   size_t index = 0;

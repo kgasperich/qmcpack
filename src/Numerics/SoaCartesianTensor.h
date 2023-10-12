@@ -39,11 +39,12 @@ namespace qmcplusplus
 template<class T>
 struct SoaCartesianTensor
 {
-  using value_type    = T;
-  using ggg_type      = TinyVector<Tensor<T, 3>, 3>;
-  using xyz_type      = TinyVector<T, 3>;
-  using OffloadArray2 = Array<T, 2, OffloadPinnedAllocator<T>>;
-  using OffloadArray3 = Array<T, 3, OffloadPinnedAllocator<T>>;
+  using value_type     = T;
+  using ggg_type       = TinyVector<Tensor<T, 3>, 3>;
+  using xyz_type       = TinyVector<T, 3>;
+  using OffloadArray2D = Array<T, 2, OffloadPinnedAllocator<T>>;
+  using OffloadArray3D = Array<T, 3, OffloadPinnedAllocator<T>>;
+  using OffloadArray4D = Array<T, 4, OffloadPinnedAllocator<T>>;
 
   ///maximum angular momentum
   size_t Lmax;
@@ -62,7 +63,16 @@ struct SoaCartesianTensor
 
   ///compute Ylm
   void evaluate_bare(T x, T y, T z, T* XYZ) const;
-  void evaluate_bare_impl(T x, T y, T z, T* XYZ, const size_t Lmax_) const;
+  static void evaluate_bare_impl(T x, T y, T z, T* XYZ, const size_t Lmax_);
+  static void evaluateVGL_impl(T x,
+                               T y,
+                               T z,
+                               T* restrict XYZ,
+                               T* restrict gr0,
+                               T* restrict gr1,
+                               T* restrict gr2,
+                               T* restrict lap,
+                               size_t Lmax_);
 
   ///compute Ylm
   inline void evaluateV(T x, T y, T z, T* XYZ) const
@@ -91,29 +101,79 @@ struct SoaCartesianTensor
       for (int i = 0, nl = cXYZ.size(); i < nl; i++)
         XYZ[ir * nlm + i] *= NormFactor[i];
   }
-  inline void batched_evaluateV(OffloadArray3& xyz, OffloadArray3& Ylm) const
+
+  /**
+   * @brief evaluate for multiple electrons and multiple pbc images
+   * 
+   * @param [in] xyz electron positions [Nelec, Npbc, 3(x,y,z)]
+   * @param [out] XYZ Cartesian tensor elements [Nelec, Npbc, Nlm]
+  */
+  inline void batched_evaluateV(OffloadArray3D& xyz, OffloadArray3D& XYZ) const
   {
     const size_t nElec = xyz.size(0);
     const size_t Npbc  = xyz.size(1); // number of PBC images
     assert(xyz.size(2) == 3);
 
-    assert(Ylm.size(0) == nElec);
-    assert(Ylm.size(1) == Npbc);
-    const size_t Nlm = Ylm.size(2);
+    assert(XYZ.size(0) == nElec);
+    assert(XYZ.size(1) == Npbc);
+    const size_t Nlm = XYZ.size(2);
 
     size_t nR = nElec * Npbc; // total number of positions to evaluate
 
     auto* xyz_devptr     = xyz.device_data();
-    auto* Ylm_devptr     = Ylm.device_data();
+    auto* XYZ_devptr     = XYZ.device_data();
     auto* NormFactor_ptr = NormFactor.data();
 
-    PRAGMA_OFFLOAD("omp target teams distribute parallel for map(to:NormFactor_ptr[:Nlm])")
+    PRAGMA_OFFLOAD("omp target teams distribute parallel for map(to:NormFactor_ptr[:Nlm]) \
+                    is_device_ptr(xyz_devptr, XYZ_devptr)")
     for (size_t ir = 0; ir < nR; ir++)
     {
       evaluate_bare_impl(xyz_devptr[0 + 3 * ir], xyz_devptr[1 + 3 * ir], xyz_devptr[2 + 3 * ir],
-                         Ylm_devptr + (ir * Nlm), Lmax);
+                         XYZ_devptr + (ir * Nlm), Lmax);
       for (int i = 0; i < Nlm; i++)
-        Ylm_devptr[ir * Nlm + i] *= NormFactor_ptr[i];
+        XYZ_devptr[ir * Nlm + i] *= NormFactor_ptr[i];
+    }
+  }
+
+
+  /**
+   * @brief evaluate VGL for multiple electrons and multiple pbc images
+   * 
+   * @param [in] xyz electron positions [Nelec, Npbc, 3(x,y,z)]
+   * @param [out] XYZ Cartesian tensor elements [5(v, gx, gy, gz, lapl), Nelec, Npbc, Nlm]
+  */
+  inline void batched_evaluateVGL(OffloadArray3D& xyz, OffloadArray4D& XYZ) const
+  {
+    const size_t nElec = xyz.size(0);
+    const size_t Npbc  = xyz.size(1); // number of PBC images
+    assert(xyz.size(2) == 3);
+
+    assert(XYZ.size(0) == 5);
+    assert(XYZ.size(1) == nElec);
+    assert(XYZ.size(2) == Npbc);
+    const size_t Nlm = XYZ.size(3);
+    assert(NormFactor.size() == Nlm);
+
+    size_t nR     = nElec * Npbc; // total number of positions to evaluate
+    size_t offset = Nlm * nR;     // stride for v/gx/gy/gz/l
+
+    auto* xyz_devptr     = xyz.device_data();
+    auto* XYZ_devptr     = XYZ.device_data();
+    auto* NormFactor_ptr = NormFactor.data();
+    // TODO: make separate ptrs to start of v/gx/gy/gz/l?
+    // might be more readable?
+    // or just pass one ptr to evaluateVGL and apply stride/offset inside
+
+    PRAGMA_OFFLOAD("omp target teams distribute parallel for map(to:NormFactor_ptr[:Nlm]) \
+                    is_device_ptr(xyz_devptr, XYZ_devptr)")
+    for (size_t ir = 0; ir < nR; ir++)
+    {
+      evaluateVGL_impl(xyz_devptr[0 + 3 * ir], xyz_devptr[1 + 3 * ir], xyz_devptr[2 + 3 * ir], XYZ_devptr + (ir * Nlm),
+                       XYZ_devptr + (ir * Nlm + offset * 1), XYZ_devptr + (ir * Nlm + offset * 2),
+                       XYZ_devptr + (ir * Nlm + offset * 3), XYZ_devptr + (ir * Nlm + offset * 4), Lmax);
+      for (int i = 0; i < Nlm; i++)
+        for (int ivgl = 0; ivgl < 5; ivgl++)
+          XYZ_devptr[i + Nlm * (ir + nR * ivgl)] *= NormFactor_ptr[i];
     }
   }
 
@@ -179,9 +239,9 @@ SoaCartesianTensor<T>::SoaCartesianTensor(const int l_max, bool addsign) : Lmax(
   }
 }
 
-
+PRAGMA_OFFLOAD("omp declare target")
 template<class T>
-void SoaCartesianTensor<T>::evaluate_bare_impl(T x, T y, T z, T* restrict XYZ, size_t Lmax_) const
+void SoaCartesianTensor<T>::evaluate_bare_impl(T x, T y, T z, T* restrict XYZ, size_t Lmax_)
 {
   const T x2 = x * x, y2 = y * y, z2 = z * z;
   const T x3 = x2 * x, y3 = y2 * y, z3 = z2 * z;
@@ -282,6 +342,7 @@ void SoaCartesianTensor<T>::evaluate_bare_impl(T x, T y, T z, T* restrict XYZ, s
     XYZ[0] = 1; // S
   }
 }
+PRAGMA_OFFLOAD("omp end declare target")
 
 template<class T>
 void SoaCartesianTensor<T>::evaluate_bare(T x, T y, T z, T* restrict XYZ) const
@@ -386,6 +447,368 @@ void SoaCartesianTensor<T>::evaluate_bare(T x, T y, T z, T* restrict XYZ) const
   }
 }
 
+PRAGMA_OFFLOAD("omp declare target")
+template<class T>
+void SoaCartesianTensor<T>::evaluateVGL_impl(T x,
+                                             T y,
+                                             T z,
+                                             T* restrict XYZ,
+                                             T* restrict gr0,
+                                             T* restrict gr1,
+                                             T* restrict gr2,
+                                             T* restrict lap,
+                                             size_t Lmax_)
+{
+  const T x2 = x * x, y2 = y * y, z2 = z * z;
+  const T x3 = x2 * x, y3 = y2 * y, z3 = z2 * z;
+  const T x4 = x3 * x, y4 = y3 * y, z4 = z3 * z;
+  const T x5 = x4 * x, y5 = y4 * y, z5 = z4 * z;
+  // T* restrict XYZ = cXYZ.data(0);
+  // T* restrict gr0 = cXYZ.data(1);
+  // T* restrict gr1 = cXYZ.data(2);
+  // T* restrict gr2 = cXYZ.data(3);
+  // T* restrict lap = cXYZ.data(4);
+
+  switch (Lmax_)
+  {
+  case 6:
+    XYZ[83] = x2 * y2 * z2; // X2Y2Z2
+    gr0[83] = 2 * x * y2 * z2;
+    gr1[83] = 2 * x2 * y * z2;
+    gr2[83] = 2 * x2 * y2 * z;
+    lap[83] = 2 * x2 * y2 + 2 * x2 * z2 + 2 * y2 * z2;
+    XYZ[82] = x * y2 * z3; // Z3Y2X
+    gr0[82] = y2 * z3;
+    gr1[82] = 2 * x * y * z3;
+    gr2[82] = 3 * x * y2 * z2;
+    lap[82] = 6 * x * y2 * z + 2 * x * z3;
+    XYZ[81] = x2 * y * z3; // Z3X2Y
+    gr0[81] = 2 * x * y * z3;
+    gr1[81] = x2 * z3;
+    gr2[81] = 3 * x2 * y * z2;
+    lap[81] = 6 * x2 * y * z + 2 * y * z3;
+    XYZ[80] = x * y3 * z2; // Y3Z2X
+    gr0[80] = y3 * z2;
+    gr1[80] = 3 * x * y2 * z2;
+    gr2[80] = 2 * x * y3 * z;
+    lap[80] = 6 * x * y * z2 + 2 * x * y3;
+    XYZ[79] = x2 * y3 * z; // Y3X2Z
+    gr0[79] = 2 * x * y3 * z;
+    gr1[79] = 3 * x2 * y2 * z;
+    gr2[79] = x2 * y3;
+    lap[79] = 6 * x2 * y * z + 2 * y3 * z;
+    XYZ[78] = x3 * y * z2; // X3Z2Y
+    gr0[78] = 3 * x2 * y * z2;
+    gr1[78] = x3 * z2;
+    gr2[78] = 2 * x3 * y * z;
+    lap[78] = 6 * x * y * z2 + 2 * x3 * y;
+    XYZ[77] = x3 * y2 * z; // X3Y2Z
+    gr0[77] = 3 * x2 * y2 * z;
+    gr1[77] = 2 * x3 * y * z;
+    gr2[77] = x3 * y2;
+    lap[77] = 6 * x * y2 * z + 2 * x3 * z;
+    XYZ[76] = y3 * z3; // Y3Z3
+    gr1[76] = 3 * y2 * z3;
+    gr2[76] = 3 * y3 * z2;
+    lap[76] = 6 * y * z3 + 6 * y3 * z;
+    XYZ[75] = x3 * z3; // X3Z3
+    gr0[75] = 3 * x2 * z3;
+    gr2[75] = 3 * x3 * z2;
+    lap[75] = 6 * x * z3 + 6 * x3 * z;
+    XYZ[74] = x3 * y3; // X3Y3
+    gr0[74] = 3 * x2 * y3;
+    gr1[74] = 3 * x3 * y2;
+    lap[74] = 6 * x * y3 + 6 * x3 * y;
+    XYZ[73] = x * y * z4; // Z4XY
+    gr0[73] = y * z4;
+    gr1[73] = x * z4;
+    gr2[73] = 4 * x * y * z3;
+    lap[73] = 12 * x * y * z2;
+    XYZ[72] = x * y4 * z; // Y4XZ
+    gr0[72] = y4 * z;
+    gr1[72] = 4 * x * y3 * z;
+    gr2[72] = x * y4;
+    lap[72] = 12 * x * y2 * z;
+    XYZ[71] = x4 * y * z; // X4YZ
+    gr0[71] = 4 * x3 * y * z;
+    gr1[71] = x4 * z;
+    gr2[71] = x4 * y;
+    lap[71] = 12 * x2 * y * z;
+    XYZ[70] = y2 * z4; // Z4Y2
+    gr1[70] = 2 * y * z4;
+    gr2[70] = 4 * y2 * z3;
+    lap[70] = 12 * y2 * z2 + 2 * z4;
+    XYZ[69] = x2 * z4; // Z4X2
+    gr0[69] = 2 * x * z4;
+    gr2[69] = 4 * x2 * z3;
+    lap[69] = 12 * x2 * z2 + 2 * z4;
+    XYZ[68] = y4 * z2; // Y4Z2
+    gr1[68] = 4 * y3 * z2;
+    gr2[68] = 2 * y4 * z;
+    lap[68] = 12 * y2 * z2 + 2 * y4;
+    XYZ[67] = x2 * y4; // Y4X2
+    gr0[67] = 2 * x * y4;
+    gr1[67] = 4 * x2 * y3;
+    lap[67] = 12 * x2 * y2 + 2 * y4;
+    XYZ[66] = x4 * z2; // X4Z2
+    gr0[66] = 4 * x3 * z2;
+    gr2[66] = 2 * x4 * z;
+    lap[66] = 12 * x2 * z2 + 2 * x4;
+    XYZ[65] = x4 * y2; // X4Y2
+    gr0[65] = 4 * x3 * y2;
+    gr1[65] = 2 * x4 * y;
+    lap[65] = 12 * x2 * y2 + 2 * x4;
+    XYZ[64] = y * z * z4; // Z5Y
+    gr1[64] = z * z4;
+    gr2[64] = 5 * y * z4;
+    lap[64] = 20 * y * z3;
+    XYZ[63] = x * z * z4; // Z5X
+    gr0[63] = z * z4;
+    gr2[63] = 5 * x * z4;
+    lap[63] = 20 * x * z3;
+    XYZ[62] = y * y4 * z; // Y5Z
+    gr1[62] = 5 * y4 * z;
+    gr2[62] = y * y4;
+    lap[62] = 20 * y3 * z;
+    XYZ[61] = x * y * y4; // Y5X
+    gr0[61] = y * y4;
+    gr1[61] = 5 * x * y4;
+    lap[61] = 20 * x * y3;
+    XYZ[60] = x * x4 * z; // X5Z
+    gr0[60] = 5 * x4 * z;
+    gr2[60] = x * x4;
+    lap[60] = 20 * x3 * z;
+    XYZ[59] = x * x4 * y; // X5Y
+    gr0[59] = 5 * x4 * y;
+    gr1[59] = x * x4;
+    lap[59] = 20 * x3 * y;
+    XYZ[58] = z * z5; // Z6
+    gr2[58] = 6 * z * z4;
+    lap[58] = 30 * z4;
+    XYZ[57] = y * y5; // Y6
+    gr1[57] = 6 * y * y4;
+    lap[57] = 30 * y4;
+    XYZ[56] = x * x5; // X6
+    gr0[56] = 6 * x * x4;
+    lap[56] = 30 * x4;
+  case 5:
+    XYZ[55] = x * y2 * z2; // YYZZX
+    gr0[55] = y2 * z2;
+    gr1[55] = 2 * x * y * z2;
+    gr2[55] = 2 * x * y2 * z;
+    lap[55] = 2 * x * y2 + 2 * x * z2;
+    XYZ[54] = x2 * y * z2; // XXZZY
+    gr0[54] = 2 * x * y * z2;
+    gr1[54] = x2 * z2;
+    gr2[54] = 2 * x2 * y * z;
+    lap[54] = 2 * x2 * y + 2 * y * z2;
+    XYZ[53] = x2 * y2 * z; // XXYYZ
+    gr0[53] = 2 * x * y2 * z;
+    gr1[53] = 2 * x2 * y * z;
+    gr2[53] = x2 * y2;
+    lap[53] = 2 * x2 * z + 2 * y2 * z;
+    XYZ[52] = x * y * z3; // ZZZXY
+    gr0[52] = y * z3;
+    gr1[52] = x * z3;
+    gr2[52] = 3 * x * y * z2;
+    lap[52] = 6 * x * y * z;
+    XYZ[51] = x * y3 * z; // YYYXZ
+    gr0[51] = y3 * z;
+    gr1[51] = 3 * x * y2 * z;
+    gr2[51] = x * y3;
+    lap[51] = 6 * x * y * z;
+    XYZ[50] = x3 * y * z; // XXXYZ
+    gr0[50] = 3 * x2 * y * z;
+    gr1[50] = x3 * z;
+    gr2[50] = x3 * y;
+    lap[50] = 6 * x * y * z;
+    XYZ[49] = y2 * z3; // ZZZYY
+    gr1[49] = 2 * y * z3;
+    gr2[49] = 3 * y2 * z2;
+    lap[49] = 6 * y2 * z + 2 * z3;
+    XYZ[48] = x2 * z3; // ZZZXX
+    gr0[48] = 2 * x * z3;
+    gr2[48] = 3 * x2 * z2;
+    lap[48] = 6 * x2 * z + 2 * z3;
+    XYZ[47] = y3 * z2; // YYYZZ
+    gr1[47] = 3 * y2 * z2;
+    gr2[47] = 2 * y3 * z;
+    lap[47] = 6 * y * z2 + 2 * y3;
+    XYZ[46] = x2 * y3; // YYYXX
+    gr0[46] = 2 * x * y3;
+    gr1[46] = 3 * x2 * y2;
+    lap[46] = 6 * x2 * y + 2 * y3;
+    XYZ[45] = x3 * z2; // XXXZZ
+    gr0[45] = 3 * x2 * z2;
+    gr2[45] = 2 * x3 * z;
+    lap[45] = 6 * x * z2 + 2 * x3;
+    XYZ[44] = x3 * y2; // XXXYY
+    gr0[44] = 3 * x2 * y2;
+    gr1[44] = 2 * x3 * y;
+    lap[44] = 6 * x * y2 + 2 * x3;
+    XYZ[43] = y * z4; // ZZZZY
+    gr1[43] = z4;
+    gr2[43] = 4 * y * z3;
+    lap[43] = 12 * y * z2;
+    XYZ[42] = x * z4; // ZZZZX
+    gr0[42] = z4;
+    gr2[42] = 4 * x * z3;
+    lap[42] = 12 * x * z2;
+    XYZ[41] = y4 * z; // YYYYZ
+    gr1[41] = 4 * y3 * z;
+    gr2[41] = y4;
+    lap[41] = 12 * y2 * z;
+    XYZ[40] = x * y4; // YYYYX
+    gr0[40] = y4;
+    gr1[40] = 4 * x * y3;
+    lap[40] = 12 * x * y2;
+    XYZ[39] = x4 * z; // XXXXZ
+    gr0[39] = 4 * x3 * z;
+    gr2[39] = x4;
+    lap[39] = 12 * x2 * z;
+    XYZ[38] = x4 * y; // XXXXY
+    gr0[38] = 4 * x3 * y;
+    gr1[38] = x4;
+    lap[38] = 12 * x2 * y;
+    XYZ[37] = z * z4; // ZZZZZ
+    gr2[37] = 5 * z4;
+    lap[37] = 20 * z3;
+    XYZ[36] = y * y4; // YYYYY
+    gr1[36] = 5 * y4;
+    lap[36] = 20 * y3;
+    XYZ[35] = x * x4; // XXXXX
+    gr0[35] = 5 * x4;
+    lap[35] = 20 * x3;
+  case 4:
+    XYZ[34] = x * y * z2; // ZZXY
+    gr0[34] = y * z2;
+    gr1[34] = x * z2;
+    gr2[34] = 2 * x * y * z;
+    lap[34] = 2 * x * y;
+    XYZ[33] = x * y2 * z; // YYXZ
+    gr0[33] = y2 * z;
+    gr1[33] = 2 * x * y * z;
+    gr2[33] = x * y2;
+    lap[33] = 2 * x * z;
+    XYZ[32] = x2 * y * z; // XXYZ
+    gr0[32] = 2 * x * y * z;
+    gr1[32] = x2 * z;
+    gr2[32] = x2 * y;
+    lap[32] = 2 * y * z;
+    XYZ[31] = y2 * z2; // YYZZ
+    gr1[31] = 2 * y * z2;
+    gr2[31] = 2 * y2 * z;
+    lap[31] = 2 * y2 + 2 * z2;
+    XYZ[30] = x2 * z2; // XXZZ
+    gr0[30] = 2 * x * z2;
+    gr2[30] = 2 * x2 * z;
+    lap[30] = 2 * x2 + 2 * z2;
+    XYZ[29] = x2 * y2; // XXYY
+    gr0[29] = 2 * x * y2;
+    gr1[29] = 2 * x2 * y;
+    lap[29] = 2 * x2 + 2 * y2;
+    XYZ[28] = y * z3; // ZZZY
+    gr1[28] = z3;
+    gr2[28] = 3 * y * z2;
+    lap[28] = 6 * y * z;
+    XYZ[27] = x * z3; // ZZZX
+    gr0[27] = z3;
+    gr2[27] = 3 * x * z2;
+    lap[27] = 6 * x * z;
+    XYZ[26] = y3 * z; // YYYZ
+    gr1[26] = 3 * y2 * z;
+    gr2[26] = y3;
+    lap[26] = 6 * y * z;
+    XYZ[25] = x * y3; // YYYX
+    gr0[25] = y3;
+    gr1[25] = 3 * x * y2;
+    lap[25] = 6 * x * y;
+    XYZ[24] = x3 * z; // XXXZ
+    gr0[24] = 3 * x2 * z;
+    gr2[24] = x3;
+    lap[24] = 6 * x * z;
+    XYZ[23] = x3 * y; // XXXY
+    gr0[23] = 3 * x2 * y;
+    gr1[23] = x3;
+    lap[23] = 6 * x * y;
+    XYZ[22] = z4; // ZZZZ
+    gr2[22] = 4 * z3;
+    lap[22] = 12 * z2;
+    XYZ[21] = y4; // YYYY
+    gr1[21] = 4 * y3;
+    lap[21] = 12 * y2;
+    XYZ[20] = x4; // XXXX
+    gr0[20] = 4 * x3;
+    lap[20] = 12 * x2;
+  case 3:
+    XYZ[19] = x * y * z; // XYZ
+    gr0[19] = y * z;
+    gr1[19] = x * z;
+    gr2[19] = x * y;
+    XYZ[18] = y * z2; // ZZY
+    gr1[18] = z2;
+    gr2[18] = 2 * y * z;
+    lap[18] = 2 * y;
+    XYZ[17] = x * z2; // ZZX
+    gr0[17] = z2;
+    gr2[17] = 2 * x * z;
+    lap[17] = 2 * x;
+    XYZ[16] = y2 * z; // YYZ
+    gr1[16] = 2 * y * z;
+    gr2[16] = y2;
+    lap[16] = 2 * z;
+    XYZ[15] = x * y2; // YYX
+    gr0[15] = y2;
+    gr1[15] = 2 * x * y;
+    lap[15] = 2 * x;
+    XYZ[14] = x2 * z; // XXZ
+    gr0[14] = 2 * x * z;
+    gr2[14] = x2;
+    lap[14] = 2 * z;
+    XYZ[13] = x2 * y; // XXY
+    gr0[13] = 2 * x * y;
+    gr1[13] = x2;
+    lap[13] = 2 * y;
+    XYZ[12] = z3; // ZZZ
+    gr2[12] = 3 * z2;
+    lap[12] = 6 * z;
+    XYZ[11] = y3; // YYY
+    gr1[11] = 3 * y2;
+    lap[11] = 6 * y;
+    XYZ[10] = x3; // XXX
+    gr0[10] = 3 * x2;
+    lap[10] = 6 * x;
+  case 2:
+    XYZ[9] = y * z; // YZ
+    gr1[9] = z;
+    gr2[9] = y;
+    XYZ[8] = x * z; // XZ
+    gr0[8] = z;
+    gr2[8] = x;
+    XYZ[7] = x * y; // XY
+    gr0[7] = y;
+    gr1[7] = x;
+    XYZ[6] = z2; // ZZ
+    gr2[6] = 2 * z;
+    lap[6] = 2;
+    XYZ[5] = y2; // YY
+    gr1[5] = 2 * y;
+    lap[5] = 2;
+    XYZ[4] = x2; // XX
+    gr0[4] = 2 * x;
+    lap[4] = 2;
+  case 1:
+    XYZ[3] = z; // Z
+    gr2[3] = 1;
+    XYZ[2] = y; // Y
+    gr1[2] = 1;
+    XYZ[1] = x; // X
+    gr0[1] = 1;
+  case 0:
+    XYZ[0] = 1; // S
+  }
+}
+PRAGMA_OFFLOAD("omp end declare target")
 
 template<class T>
 void SoaCartesianTensor<T>::evaluateVGL(T x, T y, T z)

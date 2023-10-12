@@ -31,11 +31,12 @@ namespace qmcplusplus
 template<typename FN>
 struct MultiFunctorAdapter
 {
-  using RealType      = typename FN::real_type;
-  using GridType      = LogGridLight<RealType>;
-  using single_type   = FN;
-  using OffloadArray2 = Array<RealType, 2, OffloadPinnedAllocator<RealType>>;
-  using OffloadArray3 = Array<RealType, 3, OffloadPinnedAllocator<RealType>>;
+  using RealType       = typename FN::real_type;
+  using GridType       = LogGridLight<RealType>;
+  using single_type    = FN;
+  using OffloadArray2D = Array<RealType, 2, OffloadPinnedAllocator<RealType>>;
+  using OffloadArray3D = Array<RealType, 3, OffloadPinnedAllocator<RealType>>;
+  using OffloadArray4D = Array<RealType, 4, OffloadPinnedAllocator<RealType>>;
   aligned_vector<std::unique_ptr<single_type>> Rnl;
 
   MultiFunctorAdapter() = default;
@@ -79,8 +80,9 @@ struct MultiFunctorAdapter
       }
     }
   }
-  inline void batched_evaluate(OffloadArray2& r, OffloadArray3& u, RealType Rmax) const
+  inline void batched_evaluate(OffloadArray2D& r, OffloadArray3D& u, RealType Rmax) const
   {
+    r.updateFrom(); // TODO: remove after offload
     const size_t nElec = r.size(0);
     const size_t Nxyz  = r.size(1); // number of PBC images
     assert(nElec == u.size(0));
@@ -106,7 +108,7 @@ struct MultiFunctorAdapter
       }
     }
 
-    u.updateTo();
+    u.updateTo(); // TODO: remove after offload
   }
   inline void evaluate(RealType r, RealType* restrict u, RealType* restrict du, RealType* restrict d2u)
   {
@@ -135,8 +137,53 @@ struct MultiFunctorAdapter
       d3u[i] = Rnl[i]->d3Y;
     }
   }
-};
 
+
+  inline void batched_evaluateVGL(OffloadArray2D& r, OffloadArray4D& vgl, RealType Rmax) const
+  {
+    r.updateFrom(); // TODO: remove when eval is offloaded
+    const size_t nElec = r.size(0);
+    const size_t Nxyz  = r.size(1); // number of PBC images
+    assert(3 == vgl.size(0));
+    assert(nElec == vgl.size(1));
+    assert(Nxyz == vgl.size(2));
+    const size_t nRnl = vgl.size(3);  // number of primitives
+    const size_t nR   = nElec * Nxyz; // total number of positions to evaluate
+    assert(nRnl == Rnl.size());
+
+    auto* r_ptr   = r.data();
+    auto* u_ptr   = vgl.data_at(0, 0, 0, 0);
+    auto* du_ptr  = vgl.data_at(1, 0, 0, 0);
+    auto* d2u_ptr = vgl.data_at(2, 0, 0, 0);
+
+    for (size_t ir = 0; ir < nR; ir++)
+    {
+      // TODO: once this is offloaded, maybe better to just avoid branching and keep values past Rmax
+      if (r_ptr[ir] >= Rmax)
+      {
+        for (size_t i = 0; i < nRnl; ++i)
+        {
+          u_ptr[ir * nRnl + i]   = 0.0;
+          du_ptr[ir * nRnl + i]  = 0.0;
+          d2u_ptr[ir * nRnl + i] = 0.0;
+        }
+      }
+      else
+      {
+        const RealType r    = r_ptr[ir];
+        const RealType rinv = RealType(1) / r;
+        for (size_t i = 0; i < nRnl; ++i)
+        {
+          Rnl[i]->evaluateAll(r, rinv);
+          u_ptr[ir * nRnl + i]   = Rnl[i]->Y;
+          du_ptr[ir * nRnl + i]  = Rnl[i]->dY;
+          d2u_ptr[ir * nRnl + i] = Rnl[i]->d2Y;
+        }
+      }
+    }
+    vgl.updateTo(); // TODO: remove when eval is offloaded
+  }
+};
 template<typename COT>
 class RadialOrbitalSetBuilder;
 

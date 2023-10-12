@@ -126,11 +126,15 @@ public:
                            OffloadMWVArray& v) override;
 
   /** compute VGL using packed array with all walkers 
+   * @param bs_list list of basis sets (one for each walker)
    * @param P_list list of quantum particleset (one for each walker)
    * @param iat active particle
    * @param vgl   Array(n_walkers, 5, BasisSetSize)
    */
-  void mw_evaluateVGL(const RefVectorWithLeader<ParticleSet>& P_list, int iat, OffloadMWVGLArray& vgl) override;
+  void mw_evaluateVGL(RefVectorWithLeader<SoaBasisSetBase<ORBT>>& bs_list,
+                      const RefVectorWithLeader<ParticleSet>& P_list,
+                      int iat,
+                      OffloadMWVGLArray& vgl) override;
 
   /** compute VGH 
    * @param P quantum particleset

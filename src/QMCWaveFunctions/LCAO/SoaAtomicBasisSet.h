@@ -30,15 +30,14 @@ namespace qmcplusplus
 template<typename ROT, typename SH>
 struct SoaAtomicBasisSet
 {
-  using RadialOrbital_t         = ROT;
-  using RealType                = typename ROT::RealType;
-  using GridType                = typename ROT::GridType;
-  using ValueType               = typename QMCTraits::ValueType;
-  using OffloadNelecVGLPBCArray = Array<ValueType, 4, OffloadPinnedAllocator<ValueType>>; // [VGL, elec, PBC, Rnl/Ylm]
-  using OffloadNelecVPBCArray   = Array<ValueType, 3, OffloadPinnedAllocator<ValueType>>; // [elec, PBC, Rnl/Ylm/xyz]
-  using OffloadNelecPBCArray    = Array<ValueType, 2, OffloadPinnedAllocator<ValueType>>; // [elec, PBC]
-  using OffloadRPBCArray        = Array<ValueType, 2, OffloadPinnedAllocator<ValueType>>; // [xyz, PBC]
-  using OffloadVector           = Vector<ValueType, OffloadPinnedAllocator<ValueType>>;
+  using RadialOrbital_t = ROT;
+  using RealType        = typename ROT::RealType;
+  using GridType        = typename ROT::GridType;
+  using ValueType       = typename QMCTraits::ValueType;
+  using OffloadArray4D  = Array<ValueType, 4, OffloadPinnedAllocator<ValueType>>;
+  using OffloadArray3D  = Array<ValueType, 3, OffloadPinnedAllocator<ValueType>>;
+  using OffloadArray2D  = Array<ValueType, 2, OffloadPinnedAllocator<ValueType>>;
+  using OffloadVector   = Vector<ValueType, OffloadPinnedAllocator<ValueType>>;
 
   ///size of the basis set
   int BasisSetSize;
@@ -684,6 +683,239 @@ struct SoaAtomicBasisSet
   }
 
 
+  /** evaluate VGL
+   */
+  template<typename LAT, typename VT>
+  inline void mw_evaluateVGL(const RefVectorWithLeader<SoaAtomicBasisSet>& atom_bs_list,
+                             const LAT& lattice,
+                             Array<VT, 3, OffloadPinnedAllocator<VT>>& psi_vgl,
+                             const Vector<RealType, OffloadPinnedAllocator<RealType>>& displ_list,
+                             const Vector<RealType, OffloadPinnedAllocator<RealType>>& Tv_list,
+                             const size_t nElec,
+                             const size_t nBasTot,
+                             const size_t c,
+                             const size_t BasisOffset,
+                             const size_t NumCenters)
+  {
+    assert(this == &atom_bs_list.getLeader());
+    auto& atom_bs_leader = atom_bs_list.template getCastedLeader<SoaAtomicBasisSet<ROT, SH>>();
+
+    int Nx   = PBCImages[0] + 1;
+    int Ny   = PBCImages[1] + 1;
+    int Nz   = PBCImages[2] + 1;
+    int Nyz  = Ny * Nz;
+    int Nxyz = Nx * Nyz;
+
+    //assert(psi_vgl.size(0) == 5);
+    assert(psi_vgl.size(1) == nElec);
+    assert(psi_vgl.size(2) == nBasTot);
+
+
+    auto& ylm_vgl = atom_bs_leader.mw_mem_handle_.getResource().ylm_vgl;
+    auto& rnl_vgl = atom_bs_leader.mw_mem_handle_.getResource().rnl_vgl;
+    auto& dr      = atom_bs_leader.mw_mem_handle_.getResource().dr;
+    auto& r       = atom_bs_leader.mw_mem_handle_.getResource().r;
+
+    size_t nRnl = RnlID.size();
+    size_t nYlm = Ylm.size();
+
+    ylm_vgl.resize(5, nElec, Nxyz, nYlm);
+    rnl_vgl.resize(3, nElec, Nxyz, nRnl);
+    dr.resize(nElec, Nxyz, 3);
+    r.resize(nElec, Nxyz);
+
+
+    // TODO: move these outside?
+    auto& dr_pbc       = atom_bs_leader.mw_mem_handle_.getResource().dr_pbc;
+    auto& correctphase = atom_bs_leader.mw_mem_handle_.getResource().correctphase;
+    dr_pbc.resize(Nxyz, 3);
+    correctphase.resize(nElec);
+
+    // TODO: should this be VT?
+    constexpr RealType cone(1);
+    constexpr RealType ctwo(2);
+
+    //V,Gx,Gy,Gz,L
+    auto* restrict psi_devptr             = psi_vgl.device_data_at(0, 0, 0);
+    auto* restrict dpsi_x_devptr          = psi_vgl.device_data_at(1, 0, 0);
+    auto* restrict dpsi_y_devptr          = psi_vgl.device_data_at(2, 0, 0);
+    auto* restrict dpsi_z_devptr          = psi_vgl.device_data_at(3, 0, 0);
+    auto* restrict d2psi_devptr           = psi_vgl.device_data_at(4, 0, 0);
+
+
+    auto* dr_pbc_devptr = dr_pbc.device_data();
+    auto* latR_ptr      = lattice.R.data();
+
+    // build dr_pbc: translation vectors to all images
+    // should just do this once and store it (like with phase)
+    {
+      ScopedTimer local(pbc_timer_);
+      PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) map(to:latR_ptr[:9]) \
+        is_device_ptr(dr_pbc_devptr) ")
+      for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
+      {
+        // is std::div any better than just % and / separately?
+        auto div_k  = std::div(i_xyz, Nz);
+        int k       = div_k.rem;
+        int ij      = div_k.quot;
+        auto div_ij = std::div(ij, Ny);
+        int j       = div_ij.rem;
+        int i       = div_ij.quot;
+        int TransX  = ((i % 2) * 2 - 1) * ((i + 1) / 2);
+        int TransY  = ((j % 2) * 2 - 1) * ((j + 1) / 2);
+        int TransZ  = ((k % 2) * 2 - 1) * ((k + 1) / 2);
+        //TODO:
+        //  Trans = {TransX,Transy,TransZ};
+        //  dr_pbc[i_xyz] = dot(Trans, lattice.R);
+        for (size_t i_dim = 0; i_dim < 3; i_dim++)
+          dr_pbc_devptr[i_dim + 3 * i_xyz] =
+              (TransX * latR_ptr[i_dim + 0 * 3] + TransY * latR_ptr[i_dim + 1 * 3] + TransZ * latR_ptr[i_dim + 2 * 3]);
+      }
+    }
+
+
+    auto* correctphase_devptr = correctphase.device_data();
+    auto* Tv_list_devptr      = Tv_list.device_data();
+    {
+      ScopedTimer local_timer(phase_timer_);
+#if not defined(QMC_COMPLEX)
+
+      PRAGMA_OFFLOAD("omp target teams distribute parallel for is_device_ptr(correctphase_devptr) ")
+      for (size_t i_vp = 0; i_vp < nElec; i_vp++)
+        correctphase_devptr[i_vp] = 1.0;
+
+#else
+      auto* SuperTwist_ptr = SuperTwist.data();
+
+      PRAGMA_OFFLOAD("omp target teams distribute parallel for map(to:SuperTwist_ptr[:9]) \
+		    is_device_ptr(Tv_list_devptr, correctphase_devptr) ")
+      for (size_t i_vp = 0; i_vp < nElec; i_vp++)
+      {
+        //RealType phasearg = dot(3, SuperTwist.data(), 1, Tv_list.data() + 3 * i_vp, 1);
+        RealType phasearg = 0;
+        for (size_t i_dim = 0; i_dim < 3; i_dim++)
+          phasearg += SuperTwist[i_dim] * Tv_list_devptr[i_dim + 3 * i_vp];
+        RealType s, c;
+        qmcplusplus::sincos(-phasearg, &s, &c);
+        correctphase_devptr[i_vp] = ValueType(c, s);
+      }
+#endif
+    }
+
+    auto* dr_new_devptr     = dr.device_data();
+    auto* r_new_devptr      = r.device_data();
+    auto* displ_list_devptr = displ_list.device_data();
+    {
+      ScopedTimer local_timer(nelec_pbc_timer_);
+      PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) \
+		    is_device_ptr(dr_new_devptr, dr_pbc_devptr, r_new_devptr, displ_list_devptr) ")
+      for (size_t i_vp = 0; i_vp < nElec; i_vp++)
+      {
+        for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
+        {
+          RealType tmp_r2 = 0.0;
+          for (size_t i_dim = 0; i_dim < 3; i_dim++)
+          {
+            dr_new_devptr[i_dim + 3 * (i_xyz + Nxyz * i_vp)] =
+                -(displ_list_devptr[i_dim + 3 * (i_vp + c * nElec)] + dr_pbc_devptr[i_dim + 3 * i_xyz]);
+            tmp_r2 +=
+                dr_new_devptr[i_dim + 3 * (i_xyz + Nxyz * i_vp)] * dr_new_devptr[i_dim + 3 * (i_xyz + Nxyz * i_vp)];
+          }
+          r_new_devptr[i_xyz + Nxyz * i_vp] = std::sqrt(tmp_r2);
+        }
+      }
+    }
+    {
+      ScopedTimer local(rnl_timer_);
+      MultiRnl.batched_evaluateVGL(r, rnl_vgl, Rmax);
+    }
+    {
+      ScopedTimer local(ylm_timer_);
+      Ylm.batched_evaluateVGL(dr, ylm_vgl);
+    }
+
+
+    auto* phase_fac_ptr = periodic_image_phase_factors.data();
+    auto* LM_ptr        = LM.data();
+    auto* NL_ptr        = NL.data();
+
+    RealType* restrict phi_devptr   = rnl_vgl.device_data_at(0, 0, 0, 0);
+    RealType* restrict dphi_devptr  = rnl_vgl.device_data_at(1, 0, 0, 0);
+    RealType* restrict d2phi_devptr = rnl_vgl.device_data_at(2, 0, 0, 0);
+
+
+    const RealType* restrict ylm_v_devptr = ylm_vgl.device_data_at(0, 0, 0, 0); //value
+    const RealType* restrict ylm_x_devptr = ylm_vgl.device_data_at(1, 0, 0, 0); //gradX
+    const RealType* restrict ylm_y_devptr = ylm_vgl.device_data_at(2, 0, 0, 0); //gradY
+    const RealType* restrict ylm_z_devptr = ylm_vgl.device_data_at(3, 0, 0, 0); //gradZ
+    const RealType* restrict ylm_l_devptr = ylm_vgl.device_data_at(4, 0, 0, 0); //lap
+    {
+      ScopedTimer local_timer(psi_timer_);
+      PRAGMA_OFFLOAD(
+          "omp target teams distribute parallel for collapse(2) map(to:phase_fac_ptr[:Nxyz], LM_ptr[:BasisSetSize], NL_ptr[:BasisSetSize]) \
+		       is_device_ptr(ylm_v_devptr, ylm_x_devptr, ylm_y_devptr, ylm_z_devptr, ylm_l_devptr, \
+                         phi_devptr, dphi_devptr, d2phi_devptr, \
+                         psi_devptr, dpsi_x_devptr, dpsi_y_devptr, dpsi_z_devptr, d2psi_devptr, \
+                         correctphase_devptr, r_new_devptr, dr_new_devptr) ")
+      for (size_t i_e = 0; i_e < nElec; i_e++)
+      {
+        for (size_t ib = 0; ib < BasisSetSize; ++ib)
+        {
+          const int nl(NL_ptr[ib]);
+          const int lm(LM_ptr[ib]);
+          for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
+          {
+            const ValueType Phase    = phase_fac_ptr[i_xyz] * correctphase_devptr[i_e];
+            const RealType rinv      = cone / r_new_devptr[i_xyz + Nxyz * i_e];
+            const RealType x         = dr_new_devptr[0 + 3 * (i_xyz + Nxyz * i_e)];
+            const RealType y         = dr_new_devptr[1 + 3 * (i_xyz + Nxyz * i_e)];
+            const RealType z         = dr_new_devptr[2 + 3 * (i_xyz + Nxyz * i_e)];
+            const RealType drnloverr = rinv * dphi_devptr[nl + nRnl * (i_xyz + Nxyz * i_e)];
+            const RealType ang       = ylm_v_devptr[lm + nYlm * (i_xyz + Nxyz * i_e)];
+            const RealType gr_x      = drnloverr * x;
+            const RealType gr_y      = drnloverr * y;
+            const RealType gr_z      = drnloverr * z;
+            const RealType ang_x     = ylm_x_devptr[lm + nYlm * (i_xyz + Nxyz * i_e)];
+            const RealType ang_y     = ylm_y_devptr[lm + nYlm * (i_xyz + Nxyz * i_e)];
+            const RealType ang_z     = ylm_z_devptr[lm + nYlm * (i_xyz + Nxyz * i_e)];
+            const RealType vr        = phi_devptr[nl + nRnl * (i_xyz + Nxyz * i_e)];
+
+            psi_devptr[BasisOffset + ib + i_e * nBasTot] += ang * vr * Phase;
+            dpsi_x_devptr[BasisOffset + ib + i_e * nBasTot] += (ang * gr_x + vr * ang_x) * Phase;
+            dpsi_y_devptr[BasisOffset + ib + i_e * nBasTot] += (ang * gr_y + vr * ang_y) * Phase;
+            dpsi_z_devptr[BasisOffset + ib + i_e * nBasTot] += (ang * gr_z + vr * ang_z) * Phase;
+            d2psi_devptr[BasisOffset + ib + i_e * nBasTot] +=
+                (ang * (ctwo * drnloverr + d2phi_devptr[nl + nRnl * (i_xyz + Nxyz * i_e)]) +
+                 ctwo * (gr_x * ang_x + gr_y * ang_y + gr_z * ang_z) +
+                 vr * ylm_l_devptr[lm + nYlm * (i_xyz + Nxyz * i_e)]) *
+                Phase;
+          }
+        }
+      }
+    }
+    // for (size_t i_e = 0; i_e < nElec; i_e++)
+    // {
+    //   for (size_t ib = 0; ib < BasisSetSize; ++ib)
+    //   {
+    //     const int nl(NL_ptr[ib]);
+    //     const int lm(LM_ptr[ib]);
+    //     for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
+    //     {
+    //       auto div_k  = std::div(i_xyz, Nz);
+    //       int k       = div_k.rem;
+    //       int ij      = div_k.quot;
+    //       auto div_ij = std::div(ij, Ny);
+    //       int j       = div_ij.rem;
+    //       int i       = div_ij.quot;
+    //       int TransX  = ((i % 2) * 2 - 1) * ((i + 1) / 2);
+    //       int TransY  = ((j % 2) * 2 - 1) * ((j + 1) / 2);
+    //       int TransZ  = ((k % 2) * 2 - 1) * ((k + 1) / 2);
+    //       std::cout << i << j << k;
+    //       rnl_vgl[0, i_e, i_xyz, nl] << rnl_vgl[1, i_e, i_xyz, nl] << rnl_vgl[2, i_e, i_xyz, nl]
+    //     }
+    //   }
+    // }
+  }
   template<typename LAT, typename VT>
   inline void mw_evaluateV(const RefVectorWithLeader<SoaAtomicBasisSet>& atom_bs_list,
                            const LAT& lattice,
@@ -756,7 +988,7 @@ struct SoaAtomicBasisSet
     // should just do this once and store it (like with phase)
     {
       ScopedTimer local(pbc_timer_);
-      PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) map(always, to:latR_ptr[:9]) \
+      PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) map(to:latR_ptr[:9]) \
         is_device_ptr(dr_pbc_devptr) ")
       for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
       {
@@ -792,7 +1024,7 @@ struct SoaAtomicBasisSet
 #else
       auto* SuperTwist_ptr = SuperTwist.data();
 
-      PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) map(always, to:SuperTwist_ptr[:9]) \
+      PRAGMA_OFFLOAD("omp target teams distribute parallel for map(to:SuperTwist_ptr[:9]) \
 		    is_device_ptr(Tv_list_devptr, correctphase_devptr) ")
       for (size_t i_vp = 0; i_vp < nElec; i_vp++)
       {
@@ -879,8 +1111,8 @@ struct SoaAtomicBasisSet
     {
       ScopedTimer local_timer(psi_timer_);
       PRAGMA_OFFLOAD(
-          "omp target teams distribute parallel for collapse(2) map(always, to:phase_fac_ptr[:Nxyz], LM_ptr[:BasisSetSize], NL_ptr[:BasisSetSize]) \
-		    is_device_ptr(ylm_devptr, rnl_devptr, psi_devptr) ")
+          "omp target teams distribute parallel for collapse(2) map(to:phase_fac_ptr[:Nxyz], LM_ptr[:BasisSetSize], NL_ptr[:BasisSetSize]) \
+		    is_device_ptr(ylm_devptr, rnl_devptr, psi_devptr, correctphase_devptr) ")
       for (size_t i_vp = 0; i_vp < nElec; i_vp++)
       {
         for (size_t ib = 0; ib < BasisSetSize; ++ib)
@@ -940,14 +1172,14 @@ struct SoaAtomicBasisSet
       return std::make_unique<SoaAtomicBSetMultiWalkerMem>(*this);
     }
 
-    OffloadNelecVPBCArray ylm_v;     // [Nelec][PBC][NYlm]
-    OffloadNelecVPBCArray rnl_v;     // [Nelec][PBC][NRnl]
-    OffloadNelecVGLPBCArray ylm_vgl; // [5][Nelec][PBC][NYlm]
-    OffloadNelecVGLPBCArray rnl_vgl; // [5][Nelec][PBC][NRnl]
-    OffloadRPBCArray dr_pbc;         // [PBC][xyz]
-    OffloadNelecVPBCArray dr;        // [Nelec][PBC][xyz]
-    OffloadNelecPBCArray r;          // [Nelec][PBC]
-    OffloadVector correctphase;      // [Nelec]
+    OffloadArray3D ylm_v;       // [Nelec][PBC][NYlm]
+    OffloadArray3D rnl_v;       // [Nelec][PBC][NRnl]
+    OffloadArray4D ylm_vgl;     // [5][Nelec][PBC][NYlm]
+    OffloadArray4D rnl_vgl;     // [5][Nelec][PBC][NRnl]
+    OffloadArray2D dr_pbc;      // [PBC][xyz]
+    OffloadArray3D dr;          // [Nelec][PBC][xyz]
+    OffloadArray2D r;           // [Nelec][PBC]
+    OffloadVector correctphase; // [Nelec]
   };
 };
 } // namespace qmcplusplus
