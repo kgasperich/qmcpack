@@ -464,6 +464,7 @@ void LCAOrbitalSet::mw_evaluateVGLImplGEMM(const RefVectorWithLeader<SPOSet>& sp
     myBasisSet->mw_evaluateVGL(bs_list, P_list, iat, basis_vgl_mw);
   }
 
+    basis_vgl_mw.updateFrom(); //TODO: remove after debugging offload code
   int dummy_handle = 0;
   int success      = 0;
 
@@ -473,16 +474,16 @@ void LCAOrbitalSet::mw_evaluateVGLImplGEMM(const RefVectorWithLeader<SPOSet>& sp
     const size_t output_size = phi_vgl_v.size(2);
     const size_t nw          = phi_vgl_v.size(1);
 
-    for (size_t iorb = 0; iorb < output_size; iorb++)
-    {
-      success = ompBLAS::copy(dummy_handle, DIM_VGL * nw, basis_vgl_mw.device_data_at(0, 0, iorb), BasisSetSize,
-                              phi_vgl_v.device_data_at(0, 0, iorb), output_size);
-      if (success != 0)
-        throw std::runtime_error("In LCAOrbitalSet::mw_evaluateVGLImplGEMM ompBLAS::copy failed.");
-    }
-    // for (size_t idim = 0; idim < DIM_VGL; idim++)
-    //   for (int iw = 0; iw < nw; iw++)
-    // std::copy_n(basis_vgl_mw.data_at(idim, iw, 0), output_size, phi_vgl_v.data_at(idim, iw, 0));
+    //for (size_t iorb = 0; iorb < output_size; iorb++)
+    //{
+    //  success = ompBLAS::copy(dummy_handle, DIM_VGL * nw, basis_vgl_mw.device_data_at(0, 0, iorb), BasisSetSize,
+    //                          phi_vgl_v.device_data_at(0, 0, iorb), output_size);
+    //  if (success != 0)
+    //    throw std::runtime_error("In LCAOrbitalSet::mw_evaluateVGLImplGEMM ompBLAS::copy failed.");
+    //}
+    for (size_t idim = 0; idim < DIM_VGL; idim++)
+      for (int iw = 0; iw < nw; iw++)
+        std::copy_n(basis_vgl_mw.data_at(idim, iw, 0), output_size, phi_vgl_v.data_at(idim, iw, 0));
   }
   else
   {
@@ -490,25 +491,25 @@ void LCAOrbitalSet::mw_evaluateVGLImplGEMM(const RefVectorWithLeader<SPOSet>& sp
     assert(requested_orb_size <= OrbitalSetSize);
     {
       ScopedTimer local(mo_timer_);
-      C->updateTo();
-      auto* c_devptr = C->device_data();
-      // ValueMatrix C_partial_view(C->data(), requested_orb_size, BasisSetSize);
       // TODO: make class for general blas interface in Platforms
       // have instance of that class as member of LCAOrbitalSet, call gemm through that
-      success = ompBLAS::gemm(dummy_handle, 'T', 'N',
-                              requested_orb_size,        // MOs
-                              spo_list.size() * DIM_VGL, // walkers * DIM_VGL
-                              BasisSetSize,              // AOs
-                              1, c_devptr, BasisSetSize, basis_vgl_mw.device_data(), BasisSetSize, 0,
-                              phi_vgl_v.device_data(), requested_orb_size);
-      if (success != 0)
-        throw std::runtime_error("In LCAOrbitalSet::mw_evaluateVGLImplGEMM ompBLAS::gemm failed.");
-      // BLAS::gemm('T', 'N',
-      //            requested_orb_size,        // MOs
-      //            spo_list.size() * DIM_VGL, // walkers * DIM_VGL
-      //            BasisSetSize,              // AOs
-      //            1, C_partial_view.data(), BasisSetSize, basis_vgl_mw.data(), BasisSetSize, 0, phi_vgl_v.data(),
-      //            requested_orb_size);
+      //C->updateTo();
+      //auto* c_devptr = C->device_data();
+      //success = ompBLAS::gemm(dummy_handle, 'T', 'N',
+      //                        requested_orb_size,        // MOs
+      //                        spo_list.size() * DIM_VGL, // walkers * DIM_VGL
+      //                        BasisSetSize,              // AOs
+      //                        1, c_devptr, BasisSetSize, basis_vgl_mw.device_data(), BasisSetSize, 0,
+      //                        phi_vgl_v.device_data(), requested_orb_size);
+      //if (success != 0)
+      //  throw std::runtime_error("In LCAOrbitalSet::mw_evaluateVGLImplGEMM ompBLAS::gemm failed.");
+      ValueMatrix C_partial_view(C->data(), requested_orb_size, BasisSetSize);
+      BLAS::gemm('T', 'N',
+                 requested_orb_size,        // MOs
+                 spo_list.size() * DIM_VGL, // walkers * DIM_VGL
+                 BasisSetSize,              // AOs
+                 1, C_partial_view.data(), BasisSetSize, basis_vgl_mw.data(), BasisSetSize, 0, phi_vgl_v.data(),
+                 requested_orb_size);
     }
   }
 }

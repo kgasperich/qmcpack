@@ -794,7 +794,7 @@ struct SoaAtomicBasisSet
         //RealType phasearg = dot(3, SuperTwist.data(), 1, Tv_list.data() + 3 * i_vp, 1);
         RealType phasearg = 0;
         for (size_t i_dim = 0; i_dim < 3; i_dim++)
-          phasearg += SuperTwist[i_dim] * Tv_list_devptr[i_dim + 3 * i_vp];
+          phasearg += SuperTwist[i_dim] * Tv_list_devptr[i_dim + 3 * (i_vp + c * nw)];
         RealType s, c;
         qmcplusplus::sincos(-phasearg, &s, &c);
         correctphase_devptr[i_vp] = ValueType(c, s);
@@ -825,6 +825,7 @@ struct SoaAtomicBasisSet
         }
       }
     }
+    RealType tol = 1e-10;
     {
       ScopedTimer local(rnl_timer_);
       MultiRnl.batched_evaluateVGL(r, rnl_vgl, Rmax);
@@ -845,9 +846,14 @@ struct SoaAtomicBasisSet
             MultiRnl.evaluate(r_i, phi, dphi, d2phi);
             for (size_t inl = 0; inl < nRnl; inl++)
             {
-              assert(rnl_vgl(0, i_e, i_xyz, inl) == phi[inl]);
-              assert(rnl_vgl(1, i_e, i_xyz, inl) == dphi[inl]);
-              assert(rnl_vgl(2, i_e, i_xyz, inl) == d2phi[inl]);
+              if (std::abs(rnl_vgl(0, i_e, i_xyz, inl) - phi[inl]) > tol)
+                std::cout << "phi:   " << rnl_vgl(0,i_e,i_xyz,inl) << " " << phi[inl] << std::endl;
+
+              if (std::abs(rnl_vgl(1, i_e, i_xyz, inl) - dphi[inl]) > tol)
+                std::cout << "dphi:  " << rnl_vgl(1,i_e,i_xyz,inl) << " " << dphi[inl] << std::endl;
+
+              if (std::abs(rnl_vgl(2, i_e, i_xyz, inl) - d2phi[inl]) > tol)
+                std::cout << "d2phi: " << rnl_vgl(2,i_e,i_xyz,inl) << " " << d2phi[inl] << std::endl;
             }
           }
           else
@@ -877,19 +883,24 @@ struct SoaAtomicBasisSet
         for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
         {
           RealType r_i = r(i_e, i_xyz);
-          RealType x   = -dr(i_e, i_xyz, 0);
-          RealType y   = -dr(i_e, i_xyz, 1);
-          RealType z   = -dr(i_e, i_xyz, 2);
+          RealType x   = dr(i_e, i_xyz, 0);
+          RealType y   = dr(i_e, i_xyz, 1);
+          RealType z   = dr(i_e, i_xyz, 2);
           // if (r_i <= Rmax)
           // {
             Ylm.evaluateVGL(x, y, z);
             for (size_t ilm = 0; ilm < nYlm; ilm++)
             {
-              assert(ylm_vgl(0, i_e, i_xyz, ilm) == ylm_v[ilm]);
-              assert(ylm_vgl(1, i_e, i_xyz, ilm) == ylm_x[ilm]);
-              assert(ylm_vgl(2, i_e, i_xyz, ilm) == ylm_y[ilm]);
-              assert(ylm_vgl(3, i_e, i_xyz, ilm) == ylm_z[ilm]);
-              assert(ylm_vgl(4, i_e, i_xyz, ilm) == ylm_l[ilm]);
+              if (std::abs(ylm_vgl(0, i_e, i_xyz, ilm) - ylm_v[ilm]) > tol)
+                std::cout << "ylm_v: " << ylm_vgl(0,i_e,i_xyz,ilm) << " " << ylm_v[ilm] << std::endl;
+              if (std::abs(ylm_vgl(1, i_e, i_xyz, ilm) - ylm_x[ilm]) > tol)
+                std::cout << "ylm_x: " << ylm_vgl(1,i_e,i_xyz,ilm) << " " << ylm_x[ilm] << std::endl;
+              if (std::abs(ylm_vgl(2, i_e, i_xyz, ilm) - ylm_y[ilm]) > tol)
+                std::cout << "ylm_y: " << ylm_vgl(2,i_e,i_xyz,ilm) << " " << ylm_y[ilm] << std::endl;
+              if (std::abs(ylm_vgl(3, i_e, i_xyz, ilm) - ylm_z[ilm]) > tol)
+                std::cout << "ylm_z: " << ylm_vgl(3,i_e,i_xyz,ilm) << " " << ylm_z[ilm] << std::endl;
+              if (std::abs(ylm_vgl(4, i_e, i_xyz, ilm) - ylm_l[ilm]) > tol)
+                std::cout << "ylm_l: " << ylm_vgl(4,i_e,i_xyz,ilm) << " " << ylm_l[ilm] << std::endl;
             }
           // }
           // else
@@ -961,28 +972,6 @@ struct SoaAtomicBasisSet
         }
       }
     }
-    // for (size_t i_e = 0; i_e < nElec; i_e++)
-    // {
-    //   for (size_t ib = 0; ib < BasisSetSize; ++ib)
-    //   {
-    //     const int nl(NL_ptr[ib]);
-    //     const int lm(LM_ptr[ib]);
-    //     for (int i_xyz = 0; i_xyz < Nxyz; i_xyz++)
-    //     {
-    //       auto div_k  = std::div(i_xyz, Nz);
-    //       int k       = div_k.rem;
-    //       int ij      = div_k.quot;
-    //       auto div_ij = std::div(ij, Ny);
-    //       int j       = div_ij.rem;
-    //       int i       = div_ij.quot;
-    //       int TransX  = ((i % 2) * 2 - 1) * ((i + 1) / 2);
-    //       int TransY  = ((j % 2) * 2 - 1) * ((j + 1) / 2);
-    //       int TransZ  = ((k % 2) * 2 - 1) * ((k + 1) / 2);
-    //       std::cout << i << j << k;
-    //       rnl_vgl[0, i_e, i_xyz, nl] << rnl_vgl[1, i_e, i_xyz, nl] << rnl_vgl[2, i_e, i_xyz, nl]
-    //     }
-    //   }
-    // }
   }
   template<typename LAT, typename VT>
   inline void mw_evaluateV(const RefVectorWithLeader<SoaAtomicBasisSet>& atom_bs_list,
