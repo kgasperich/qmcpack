@@ -120,7 +120,7 @@ void LCAOrbitalSet::acquireResource(ResourceCollection& collection, const RefVec
   assert(this == &spo_list.getLeader());
   auto& spo_leader = spo_list.getCastedLeader<LCAOrbitalSet>();
 
-  spo_leader.myBasisSet->acquireResource(collection, extractBasRefList(spo_list));
+  spo_leader.myBasisSet->acquireResource(collection, extractBasisRefList(spo_list));
 
   spo_leader.mw_mem_handle_ = collection.lendResource<LCAOMultiWalkerMem>();
 }
@@ -130,23 +130,19 @@ void LCAOrbitalSet::releaseResource(ResourceCollection& collection, const RefVec
   assert(this == &spo_list.getLeader());
   auto& spo_leader = spo_list.getCastedLeader<LCAOrbitalSet>();
 
-  spo_leader.myBasisSet->releaseResource(collection, extractBasRefList(spo_list));
+  spo_leader.myBasisSet->releaseResource(collection, extractBasisRefList(spo_list));
 
   collection.takebackResource(spo_leader.mw_mem_handle_);
 }
 
-RefVectorWithLeader<typename LCAOrbitalSet::basis_type> LCAOrbitalSet::extractBasRefList(
+RefVectorWithLeader<typename LCAOrbitalSet::basis_type> LCAOrbitalSet::extractBasisRefList(
     const RefVectorWithLeader<SPOSet>& spo_list) const
 {
-  auto& spo_leader = spo_list.getCastedLeader<LCAOrbitalSet>();
-  RefVectorWithLeader<basis_type> bas_list(*spo_leader.myBasisSet);
-  bas_list.reserve(spo_list.size());
+  RefVectorWithLeader<basis_type> basis_list(*spo_list.getCastedLeader<LCAOrbitalSet>().myBasisSet);
+  basis_list.reserve(spo_list.size());
   for (size_t iw = 0; iw < spo_list.size(); iw++)
-  {
-    auto& spo_i = spo_list.getCastedElement<LCAOrbitalSet>(iw);
-    bas_list.push_back(*spo_i.myBasisSet);
-  }
-  return bas_list;
+    basis_list.push_back(*spo_list.getCastedElement<LCAOrbitalSet>(iw).myBasisSet);
+  return basis_list;
 }
 std::unique_ptr<SPOSet> LCAOrbitalSet::makeClone() const { return std::make_unique<LCAOrbitalSet>(*this); }
 
@@ -458,7 +454,7 @@ void LCAOrbitalSet::mw_evaluateVGLImplGEMM(const RefVectorWithLeader<SPOSet>& sp
   auto& basis_vgl_mw = spo_leader.mw_mem_handle_.getResource().basis_vgl_mw;
   basis_vgl_mw.resize(DIM_VGL, spo_list.size(), BasisSetSize);
 
-  auto bs_list = spo_leader.extractBasRefList(spo_list);
+  auto bs_list = spo_leader.extractBasisRefList(spo_list);
   {
     ScopedTimer local(basis_timer_);
     myBasisSet->mw_evaluateVGL(bs_list, P_list, iat, basis_vgl_mw);
@@ -526,7 +522,7 @@ void LCAOrbitalSet::mw_evaluateValueVPsImplGEMM(const RefVectorWithLeader<SPOSet
   const size_t nVPs = vp_phi_v.size(0);
   vp_basis_v_mw.resize(nVPs, BasisSetSize);
 
-  auto bs_list = spo_leader.extractBasRefList(spo_list);
+  auto bs_list = spo_leader.extractBasisRefList(spo_list);
   myBasisSet->mw_evaluateValueVPs(bs_list, vp_list, vp_basis_v_mw);
 
   auto* vp_basis_devptr = vp_basis_v_mw.device_data_at(0, 0);

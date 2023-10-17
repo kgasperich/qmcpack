@@ -29,45 +29,45 @@ void SoaLocalizedBasisSet<COT, ORBT>::createResource(ResourceCollection& collect
     LOBasisSet[i]->createResource(collection);
 }
 template<class COT, typename ORBT>
-void SoaLocalizedBasisSet<COT, ORBT>::acquireResource(ResourceCollection& collection,
-                                                      const RefVectorWithLeader<SoaBasisSetBase<ORBT>>& bs_list) const
+void SoaLocalizedBasisSet<COT, ORBT>::acquireResource(
+    ResourceCollection& collection,
+    const RefVectorWithLeader<SoaBasisSetBase<ORBT>>& basisset_list) const
 {
-  auto& loc_bs_leader  = bs_list.template getCastedLeader<SoaLocalizedBasisSet<COT, ORBT>>();
-  auto& atom_bs_leader = loc_bs_leader.LOBasisSet;
-  const int num_ctr    = loc_bs_leader.LOBasisSet.size();
-  for (int i = 0; i < num_ctr; i++)
+  // need to cast to SoaLocalizedBasisSet to access LOBasisSet (atomic basis)
+  auto& loc_basis_leader = basisset_list.template getCastedLeader<SoaLocalizedBasisSet<COT, ORBT>>();
+  auto& basisset_leader  = loc_basis_leader.LOBasisSet;
+  for (int i = 0; i < basisset_leader.size(); i++)
   {
-    const auto atom_bs_list(extractLOBasisRefList(bs_list, i));
-    atom_bs_leader[i]->acquireResource(collection, atom_bs_list);
+    const auto one_species_basis_list(extractOneSpeciesBasisRefList(basisset_list, i));
+    basisset_leader[i]->acquireResource(collection, one_species_basis_list);
   }
 }
 template<class COT, typename ORBT>
-void SoaLocalizedBasisSet<COT, ORBT>::releaseResource(ResourceCollection& collection,
-                                                      const RefVectorWithLeader<SoaBasisSetBase<ORBT>>& bs_list) const
+void SoaLocalizedBasisSet<COT, ORBT>::releaseResource(
+    ResourceCollection& collection,
+    const RefVectorWithLeader<SoaBasisSetBase<ORBT>>& basisset_list) const
 {
-  auto& loc_bs_leader  = bs_list.template getCastedLeader<SoaLocalizedBasisSet<COT, ORBT>>();
-  auto& atom_bs_leader = loc_bs_leader.LOBasisSet;
-  const int num_ctr    = loc_bs_leader.LOBasisSet.size();
-  for (int i = 0; i < num_ctr; i++)
+  // need to cast to SoaLocalizedBasisSet to access LOBasisSet (atomic basis)
+  auto& loc_basis_leader = basisset_list.template getCastedLeader<SoaLocalizedBasisSet<COT, ORBT>>();
+  auto& basisset_leader  = loc_basis_leader.LOBasisSet;
+  for (int i = 0; i < basisset_leader.size(); i++)
   {
-    const auto atom_bs_list(extractLOBasisRefList(bs_list, i));
-    atom_bs_leader[i]->releaseResource(collection, atom_bs_list);
+    const auto one_species_basis_list(extractOneSpeciesBasisRefList(basisset_list, i));
+    basisset_leader[i]->releaseResource(collection, one_species_basis_list);
   }
 }
 template<class COT, typename ORBT>
-RefVectorWithLeader<COT> SoaLocalizedBasisSet<COT, ORBT>::extractLOBasisRefList(
-    const RefVectorWithLeader<SoaBasisSetBase<ORBT>>& bs_list,
+RefVectorWithLeader<COT> SoaLocalizedBasisSet<COT, ORBT>::extractOneSpeciesBasisRefList(
+    const RefVectorWithLeader<SoaBasisSetBase<ORBT>>& basisset_list,
     int id)
 {
-  auto& bs_leader = bs_list.template getCastedLeader<SoaLocalizedBasisSet<COT, ORBT>>();
-  RefVectorWithLeader<COT> atom_bs_list(*bs_leader.LOBasisSet[id]);
-  atom_bs_list.reserve(bs_list.size());
-  for (size_t iw = 0; iw < bs_list.size(); iw++)
-  {
-    auto& bs_i = bs_list.template getCastedElement<SoaLocalizedBasisSet<COT, ORBT>>(iw);
-    atom_bs_list.push_back(*bs_i.LOBasisSet[id]);
-  }
-  return atom_bs_list;
+  auto& loc_basis_leader = basisset_list.template getCastedLeader<SoaLocalizedBasisSet<COT, ORBT>>();
+  RefVectorWithLeader<COT> one_species_basis_list(*loc_basis_leader.LOBasisSet[id]);
+  one_species_basis_list.reserve(basisset_list.size());
+  for (size_t iw = 0; iw < basisset_list.size(); iw++)
+    one_species_basis_list.push_back(
+        *basisset_list.template getCastedElement<SoaLocalizedBasisSet<COT, ORBT>>(iw).LOBasisSet[id]);
+  return one_species_basis_list;
 }
 
 
@@ -280,7 +280,7 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateVGL(RefVectorWithLeader<SoaBasi
   // TODO: group/sort centers by species?
   for (int c = 0; c < NumCenters; c++)
   {
-    auto atom_bs_list = extractLOBasisRefList(bs_list, IonID[c]);
+    auto atom_bs_list = extractOneSpeciesBasisRefList(bs_list, IonID[c]);
     LOBasisSet[IonID[c]]->mw_evaluateVGL(atom_bs_list, ps_leader.getLattice(), basis_vgl_mw, displ_list_tr, Tv_list, nw,
                                          nBasTot, c, BasisOffset[c], NumCenters);
   }
@@ -377,7 +377,7 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateV_mvp(const RefVectorWithLeader
   // TODO: group/sort centers by species?
   for (int c = 0; c < NumCenters; c++)
   {
-    auto atom_bs_list = extractLOBasisRefList(bs_list, IonID[c]);
+    auto atom_bs_list = extractOneSpeciesBasisRefList(bs_list, IonID[c]);
     LOBasisSet[IonID[c]]->mw_evaluateV(atom_bs_list, vps_leader.getLattice(), vp_basis_v, displ_list_tr, Tv_list, nVPs,
                                        nBasTot, c, BasisOffset[c], NumCenters);
     // LOBasisSet[IonID[c]]->mw_evaluateV(vps_leader.getLattice(), vp_basis_v, displ_list_tr, Tv_list, nVPs, nBasTot, c,

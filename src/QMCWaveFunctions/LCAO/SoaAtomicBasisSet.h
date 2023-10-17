@@ -39,6 +39,10 @@ struct SoaAtomicBasisSet
   using OffloadArray2D  = Array<ValueType, 2, OffloadPinnedAllocator<ValueType>>;
   using OffloadVector   = Vector<ValueType, OffloadPinnedAllocator<ValueType>>;
 
+  /// multi walker shared memory buffer
+  struct SoaAtomicBSetMultiWalkerMem;
+  /// multi walker resource handle
+  ResourceHandle<SoaAtomicBSetMultiWalkerMem> mw_mem_handle_;
   ///size of the basis set
   int BasisSetSize;
   ///Number of Cell images for the evaluation of the orbital with PBC. If No PBC, should be 0;
@@ -68,8 +72,6 @@ struct SoaAtomicBasisSet
   NewTimer& nelec_pbc_timer_;
   NewTimer& phase_timer_;
   NewTimer& psi_timer_;
-  struct SoaAtomicBSetMultiWalkerMem;
-  ResourceHandle<SoaAtomicBSetMultiWalkerMem> mw_mem_handle_;
   // void createResource(ResourceCollection& collection) const;
   // void acquireResource(ResourceCollection& collection, const RefVectorWithLeader<SoaAtomicBasisSet>& atom_bs_list) const;
   // void releaseResource(ResourceCollection& collection, const RefVectorWithLeader<SoaAtomicBasisSet>& atom_bs_list) const;
@@ -683,6 +685,7 @@ struct SoaAtomicBasisSet
   }
 
 
+
   /** evaluate VGL
    */
   template<typename LAT, typename VT>
@@ -1188,34 +1191,24 @@ struct SoaAtomicBasisSet
       }
     }
   }
-
-
   void createResource(ResourceCollection& collection) const
   {
-    // Ylm.createResource(collection);
-    // MultiRnl.createResource(collection);
-    auto resource_index = collection.addResource(std::make_unique<SoaAtomicBSetMultiWalkerMem>());
+    collection.addResource(std::make_unique<SoaAtomicBSetMultiWalkerMem>());
   }
 
-  void acquireResource(ResourceCollection& collection, const RefVectorWithLeader<SoaAtomicBasisSet>& atom_bs_list) const
+  void acquireResource(ResourceCollection& collection,
+                       const RefVectorWithLeader<SoaAtomicBasisSet>& atom_basis_list) const
   {
-    assert(this == &atom_bs_list.getLeader());
-    // auto& atom_bs_leader          = atom_bs_list.getCastedLeader<SoaAtomicBasisSet>();
-    // auto& atom_bs_leader          = atom_bs_list.getCastedLeader();
-    // SoaAtomicBasisSet& atom_bs_leader          = atom_bs_list.getCastedLeader();
-    // const SoaAtomicBasisSet& atom_bs_leader          = atom_bs_list.getCastedLeader();
-    // const auto ylm_list(extractYlmRefList(atom_bs_list));
-    auto& atom_bs_leader          = atom_bs_list.template getCastedLeader<SoaAtomicBasisSet>();
-    atom_bs_leader.mw_mem_handle_ = collection.lendResource<SoaAtomicBSetMultiWalkerMem>();
+    assert(this == &atom_basis_list.getLeader());
+    atom_basis_list.template getCastedLeader<SoaAtomicBasisSet>().mw_mem_handle_ =
+        collection.lendResource<SoaAtomicBSetMultiWalkerMem>();
   }
 
-  void releaseResource(ResourceCollection& collection, const RefVectorWithLeader<SoaAtomicBasisSet>& atom_bs_list) const
+  void releaseResource(ResourceCollection& collection,
+                       const RefVectorWithLeader<SoaAtomicBasisSet>& atom_basis_list) const
   {
-    assert(this == &atom_bs_list.getLeader());
-    // auto& atom_bs_leader = atom_bs_list.getCastedLeader();
-    // const SoaAtomicBasisSet& atom_bs_leader          = atom_bs_list.getCastedLeader();
-    auto& atom_bs_leader = atom_bs_list.template getCastedLeader<SoaAtomicBasisSet>();
-    collection.takebackResource(atom_bs_leader.mw_mem_handle_);
+    assert(this == &atom_basis_list.getLeader());
+    collection.takebackResource(atom_basis_list.template getCastedLeader<SoaAtomicBasisSet>().mw_mem_handle_);
   }
 
   struct SoaAtomicBSetMultiWalkerMem : public Resource
@@ -1229,14 +1222,14 @@ struct SoaAtomicBasisSet
       return std::make_unique<SoaAtomicBSetMultiWalkerMem>(*this);
     }
 
-    OffloadArray3D ylm_v;       // [Nelec][PBC][NYlm]
-    OffloadArray3D rnl_v;       // [Nelec][PBC][NRnl]
     OffloadArray4D ylm_vgl;     // [5][Nelec][PBC][NYlm]
     OffloadArray4D rnl_vgl;     // [5][Nelec][PBC][NRnl]
-    OffloadArray2D dr_pbc;      // [PBC][xyz]
-    OffloadArray3D dr;          // [Nelec][PBC][xyz]
-    OffloadArray2D r;           // [Nelec][PBC]
-    OffloadVector correctphase; // [Nelec]
+    OffloadArray3D ylm_v;       // [Nelec][PBC][NYlm]
+    OffloadArray3D rnl_v;       // [Nelec][PBC][NRnl]
+    OffloadArray2D dr_pbc;       // [PBC][xyz]        translation vector for each image
+    OffloadArray3D dr;          // [Nelec][PBC][xyz] ion->elec displacement for each image
+    OffloadArray2D r;           // [Nelec][PBC]      ion->elec distance for each image
+    OffloadVector correctphase; // [Nelec]           overall phase
   };
 };
 } // namespace qmcplusplus
