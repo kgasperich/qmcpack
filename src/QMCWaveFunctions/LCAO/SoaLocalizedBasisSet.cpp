@@ -282,11 +282,16 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateValueVPs(const RefVectorWithLea
     {
       const auto& displ = dt_list[iw].getDisplRow(iat);
       for (int c = 0; c < NumCenters; c++)
+      {
         for (size_t idim = 0; idim < 3; idim++)
         {
           Tv_list[idim + 3 * (index + c * nVPs)]       = (ions_.R[c][idim] - coordR_list[index][idim]) - displ[c][idim];
           displ_list_tr[idim + 3 * (index + c * nVPs)] = displ[c][idim];
         }
+        std::cout << "mw_displ " << c << " " << displ_list_tr[0 + 3 * (index + c * nVPs)] << " "
+                  << displ_list_tr[1 + 3 * (index + c * nVPs)] << " " << displ_list_tr[2 + 3 * (index + c * nVPs)]
+                  << "\n";
+      }
       index++;
     }
 #if defined(QMC_COMPLEX)
@@ -325,6 +330,7 @@ void SoaLocalizedBasisSet<COT, ORBT>::evaluateV(const ParticleSet& P, int iat, O
     Tv[0] = (ions_.R[c][0] - coordR[0]) - displ[c][0];
     Tv[1] = (ions_.R[c][1] - coordR[1]) - displ[c][1];
     Tv[2] = (ions_.R[c][2] - coordR[2]) - displ[c][2];
+    std::cout << "sw_displ " << c << " " << displ[c][0] << " " << displ[c][1] << " " << displ[c][2] << "\n";
     LOBasisSet[IonID[c]]->evaluateV(P.getLattice(), dist[c], displ[c], vals + BasisOffset[c], Tv);
   }
 }
