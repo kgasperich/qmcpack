@@ -262,6 +262,7 @@ void SoaLocalizedBasisSet<COT, ORBT>::evaluateV(const ParticleSet& P, int iat, O
     Tv[0] = (ions_.R[c][0] - coordR[0]) - displ[c][0];
     Tv[1] = (ions_.R[c][1] - coordR[1]) - displ[c][1];
     Tv[2] = (ions_.R[c][2] - coordR[2]) - displ[c][2];
+    std::cout << "sw_displ " << c << " " << displ[c][0] << " " << displ[c][1] << " " << displ[c][2] << "\n";
     LOBasisSet[IonID[c]]->evaluateV(P.getLattice(), dist[c], displ[c], vals + BasisOffset[c], Tv);
   }
 }
