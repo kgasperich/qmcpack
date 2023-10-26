@@ -825,9 +825,9 @@ struct SoaAtomicBasisSet
     auto* rnl_ptr = rnl_v.data();
     {
       ScopedTimer local_timer(psi_timer_);
-      PRAGMA_OFFLOAD(
-          "omp target teams distribute parallel for collapse(2) map(to:phase_fac_ptr[:Nxyz], LM_ptr[:BasisSetSize], NL_ptr[:BasisSetSize], \
-		    ylm_ptr[:nYlm*nElec*Nxyz], rnl_ptr[:nRnl*nElec*Nxyz], psi_ptr[:nBasTot*nElec], correctphase_ptr[:nElec]) ")
+      PRAGMA_OFFLOAD("omp target teams distribute parallel for collapse(2) \
+          map(always, to:phase_fac_ptr[:Nxyz], LM_ptr[:BasisSetSize], NL_ptr[:BasisSetSize]) \
+		      map(to: ylm_ptr[:nYlm*nElec*Nxyz], rnl_ptr[:nRnl*nElec*Nxyz], psi_ptr[:nBasTot*nElec], correctphase_ptr[:nElec]) ")
       for (size_t i_e = 0; i_e < nElec; i_e++)
       {
         for (size_t ib = 0; ib < BasisSetSize; ++ib)
