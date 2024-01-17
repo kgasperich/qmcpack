@@ -692,11 +692,14 @@ void LCAOrbitalSet::mw_evaluateDetRatios(const RefVectorWithLeader<SPOSet>& spo_
   std::vector<size_t> nVP_mw(nw, 0);  // number of VPs per walker
   std::vector<size_t> iVP0_mw(nw, 0); // first VP idx of each walker
 
+  // fill with nVP per walker
   for (size_t iw = 0; iw < nw; iw++)
     nVP_mw[iw] = vp_list[iw].getTotalNum();
+
   // fill with cumulative number of VPs up to current walker
   std::exclusive_scan(nVP_mw.begin(), nVP_mw.end(), iVP0_mw.begin(), 0);
 
+  
   for (size_t iw = 0; iw < nw; iw++)
   {
     auto istart = iVP0_mw[iw];
@@ -706,19 +709,45 @@ void LCAOrbitalSet::mw_evaluateDetRatios(const RefVectorWithLeader<SPOSet>& spo_
     //for (size_t idx = 0; idx< nvp_i; idx++)
     //  invRow_deviceptr_list[istart+idx] = invRow_ptr_list[iw];
   }
+
+  std::cout << "\nnVP_mw:                   {";
+  for (auto& i : nVP_mw){
+    std::cout << i << ", ";
+  }
+  std::cout << "}\n";
+  std::cout << "\ninvRow_ptr_list       {";
+  for (auto& i : invRow_ptr_list){
+    std::cout << i << ", ";
+  }
+  std::cout << "}\n";
+  std::cout << "\ninvRow_deviceptr_list {";
+  for (auto& i : invRow_deviceptr_list){
+    std::cout << i << ", ";
+  }
+  std::cout << "}\n";
+
   auto* invRow_deviceptr_list_ptr = invRow_deviceptr_list.data();
   auto* vp_phi_v_ptr              = vp_phi_v.data();
   auto* ratios_buffer_ptr         = ratios_buffer.data();
+  auto* ratios_buffer_devptr         = ratios_buffer.device_data();
+  //ratios_buffer.updateTo();
+  //invRow_deviceptr_list.updateTo();
+  std::cout << "\nratios_buffer_ptr:    " << ratios_buffer_ptr;
+  std::cout << "\nratios_buffer_devptr: " << ratios_buffer_devptr << std::endl;
   PRAGMA_OFFLOAD("omp target teams distribute parallel for \
       map(always,to: invRow_deviceptr_list_ptr[:nVPs]) \
       map(to: vp_phi_v_ptr[:nVPs*requested_orb_size]) \
-      map(always, from: ratios_buffer_ptr[:nVPs])")
+      map(always,from: ratios_buffer_ptr[:nVPs])")
   for (size_t ivp = 0; ivp < nVPs; ivp++)
   {
     ratios_buffer_ptr[ivp] = 0;
     for (size_t iorb = 0; iorb < requested_orb_size; iorb++)
       ratios_buffer_ptr[ivp] += vp_phi_v_ptr[ivp * requested_orb_size + iorb] * invRow_deviceptr_list_ptr[ivp][iorb];
   }
+
+
+  std::cout << "\n DONE \n";
+  //ratios_buffer.updateFrom();
 
   size_t index = 0;
   for (size_t iw = 0; iw < nw; iw++)
