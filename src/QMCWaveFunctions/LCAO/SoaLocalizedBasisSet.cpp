@@ -95,7 +95,10 @@ template<class COT, typename ORBT>
 SoaLocalizedBasisSet<COT, ORBT>::SoaLocalizedBasisSet(ParticleSet& ions, ParticleSet& els)
     : ions_(ions),
       myTableIndex(els.addTable(ions, DTModes::NEED_FULL_TABLE_ANYTIME | DTModes::NEED_VP_FULL_TABLE_ON_HOST)),
-      SuperTwist(0.0)
+      SuperTwist(0.0),
+      vgl_displ_dist_timer_(createGlobalTimer("SoaLocalizedBasisSet::vgl_displ_dist",timer_level_fine)),
+      val_displ_dist_timer_(createGlobalTimer("SoaLocalizedBasisSet::val_displ_dist",timer_level_fine)),
+      nl_displ_dist_timer_(createGlobalTimer("SoaLocalizedBasisSet::nl_displ_dist",timer_level_fine))
 {
   NumCenters = ions.getTotalNum();
   NumTargets = els.getTotalNum();
@@ -228,6 +231,8 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateVGL(const RefVectorWithLeader<S
 
   auto& Tv_list       = basis_leader.mw_mem_handle_.getResource().Tv_list;
   auto& displ_list_tr = basis_leader.mw_mem_handle_.getResource().displ_list_tr;
+  {
+    ScopedTimer local_timer(vgl_displ_dist_timer_);
   Tv_list.resize(3 * NumCenters * Nw);
   displ_list_tr.resize(3 * NumCenters * Nw);
 
@@ -247,7 +252,7 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateVGL(const RefVectorWithLeader<S
   Tv_list.updateTo();
 #endif
   displ_list_tr.updateTo();
-
+  }
   for (int c = 0; c < NumCenters; c++)
   {
     auto one_species_basis_list = extractOneSpeciesBasisRefList(basis_list, IonID[c]);
@@ -316,6 +321,8 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateValueVPs(const RefVectorWithLea
 
   auto& Tv_list       = basis_leader.mw_mem_handle_.getResource().Tv_list;
   auto& displ_list_tr = basis_leader.mw_mem_handle_.getResource().displ_list_tr;
+  {
+    ScopedTimer local_timer(nl_displ_dist_timer_);
   Tv_list.resize(3 * NumCenters * nVPs);
   displ_list_tr.resize(3 * NumCenters * nVPs);
 
@@ -338,7 +345,7 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateValueVPs(const RefVectorWithLea
   Tv_list.updateTo();
 #endif
   displ_list_tr.updateTo();
-
+  }
   // TODO: group/sort centers by species?
   for (int c = 0; c < NumCenters; c++)
   {
@@ -387,6 +394,8 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateValue(const RefVectorWithLeader
   Tv_list.resize(3 * NumCenters * Nw);
   displ_list_tr.resize(3 * NumCenters * Nw);
 
+  {
+    ScopedTimer local_timer(val_displ_dist_timer_);
   for (size_t iw = 0; iw < P_list.size(); iw++)
   {
     const auto& coordR  = P_list[iw].activeR(iat);
@@ -404,7 +413,7 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateValue(const RefVectorWithLeader
   Tv_list.updateTo();
 #endif
   displ_list_tr.updateTo();
-
+  }
   for (int c = 0; c < NumCenters; c++)
   {
     auto one_species_basis_list = extractOneSpeciesBasisRefList(basis_list, IonID[c]);
