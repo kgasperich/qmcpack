@@ -40,6 +40,7 @@ void MultiDiracDeterminant::buildTableMatrix_calculateRatios_impl(
   {
     ScopedTimer local(buildTable_timer);
     const size_t num    = psi.extent(1);
+    std::cout << "DEBUG: build_tablemat_impl, num = " << num << std::endl;
     const size_t npairs = pairs.size();
     //MatrixOperators::product_ABt(psiinv,psi,table_matrix);
     const int* first  = pairs.data(0);
@@ -48,6 +49,7 @@ void MultiDiracDeterminant::buildTableMatrix_calculateRatios_impl(
     {
       const int I        = first[i];
       const int J        = second[i];
+      std::cout << "DEBUG: table det (I, J) = (" << I << ", " << J << ")" << std::endl;
       table_matrix(I, J) = simd::dot(psiinv[I], psi[J], num);
     }
   }

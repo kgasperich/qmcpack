@@ -734,6 +734,10 @@ void MultiDiracDeterminant::resize()
   const int NumDets = getNumDets();
   assert(NumDets > 0);
 
+  std::cout << "DEBUG: NumPtcls    = " << nel << "\n";
+  std::cout << "DEBUG: NumOrbitals = " << NumOrbitals << "\n";
+  std::cout << "DEBUG: NumDets     = " << NumDets << "\n";
+
   psiV_temp.resize(nel);
   psiV.resize(NumOrbitals);
   dpsiV.resize(NumOrbitals);
