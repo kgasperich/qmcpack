@@ -72,30 +72,6 @@ CSRMatrix<T, I> dense_to_sparse(T* A, size_t nrows, size_t ncols, double tol = 1
 }
 
 
-template<typename T = double, typename I = MKL_INT>
-sparse_matrix_t make_mkl_sparse(const CSRMatrix<T, I>& A)
-{
-  sparse_matrix_t A_mkl;
-  /// TODO: could just pass by reference, but modifications to A_mkl would change CSRMatrix
-  /// (make input non-const)
-  std::vector<I> rowIndex = A.rowIndex;
-  std::vector<I> columns  = A.columns;
-  std::vector<T> values   = A.values;
-
-  mkl_sparse_d_create_csr(&A_mkl, SPARSE_INDEX_BASE_ZERO, A.rows, A.cols, rowIndex.data(), rowIndex.data() + 1,
-                          columns.data(), values.data());
-
-  return A_mkl;
-}
-
-
-template<typename T = double, typename I = MKL_INT>
-sparse_matrix_t dense_to_mkl(T* A, size_t nrows, size_t ncols, double tol = 1e-12)
-{
-  CSRMatrix<T, I> Acsr = dense_to_sparse<T, I>(A, nrows, ncols, tol);
-  return make_mkl_sparse<T, I>(Acsr);
-}
-
 class MklSparseHandle
 {
 public:

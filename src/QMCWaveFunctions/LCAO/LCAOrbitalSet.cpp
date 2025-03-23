@@ -77,8 +77,6 @@ LCAOrbitalSet::LCAOrbitalSet(const std::string& my_name,
     C = std::make_shared<OffloadValueMatrix>(OrbitalSetSize, BasisSetSize);
     /// FIXME: add better control somewhere (can automatically set based on sparsity, or allow as input option)
     use_sparse_coefs = true;
-    if (use_sparse_coefs)
-      C_csr = from_dense(C->data(), OrbitalSetSize, BasisSetSize);
   }
   LCAOrbitalSet::checkObject();
 }
@@ -140,7 +138,10 @@ void LCAOrbitalSet::finalizeConstruction()
   {
     C->updateTo();
     if (use_sparse_coefs)
+    {
+      app_log() << "LCAOrbitalSet finalizeConstruction, creating C_csr from_dense(C)\n" << std::endl;
       C_csr = from_dense(C->data(), OrbitalSetSize, BasisSetSize);
+    }
   }
 }
 
