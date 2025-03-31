@@ -456,10 +456,36 @@ void TWFFastDerivWrapper::computeMDDerivatives_dmu(const std::vector<ValueMatrix
     {
       for (size_t j = 0; j < Minv_B[sid].cols(); j++)
       {
-        app_log() << "     Minv_B[" << i << "][" << j << "] = " << Minv_B[sid](i, j) << std::endl;
+        app_log() << "DBnew      Minv_B[" << i << "][" << j << "] = " << Minv_B[sid](i, j) << std::endl;
       }
- 
     }
+
+    app_log() << "DEBUGMAT: Minv_Mv/a_Ov new: " << sid << std::endl;
+    for (size_t i = 0; i < Minv_Mv[sid].rows(); i++)
+    {
+      for (size_t j = 0; j < Minv_Mv[sid].cols(); j++)
+      {
+        app_log() << "DBnew      Minv_Mv[" << i << "][" << j << "] = " << Minv_Mv[sid](i, j) << std::endl;
+      }
+     }
+
+     app_log() << "DEBUGMAT: Minv_dM/b_On new: " << sid << std::endl;
+     for (size_t i = 0; i < Minv_dM[sid].rows(); i++)
+     {
+       for (size_t j = 0; j < Minv_dM[sid].cols(); j++)
+       {
+         app_log() << "DBnew     Minv_dM[" << i << "][" << j << "] = " << Minv_dM[sid](i, j) << std::endl;
+       }
+     }
+
+     app_log() << "DEBUGMAT: Minv_dB/c_On new: " << sid << std::endl;
+     for (size_t i = 0; i < Minv_dB[sid].rows(); i++)
+     {
+       for (size_t j = 0; j < Minv_dB[sid].cols(); j++)
+       {
+         app_log() << "DBnew     Minv_dB[" << i << "][" << j << "] = " << Minv_dB[sid](i, j) << std::endl;
+       }
+     }
     // input mats:
     // a = Minv_Mv  [occ, virt]
     // X2 = Minv_dM  [occ, occ+virt]
@@ -483,7 +509,7 @@ void TWFFastDerivWrapper::computeMDDerivatives_dmu(const std::vector<ValueMatrix
     {
       for (size_t j = 0; j < X32_On.cols(); j++)
       {
-        app_log() << "X32/mat1b[" << i << "][" << j << "] = " << X32_On(i, j) << std::endl;
+        app_log() << "DBnew X32/mat1b[" << i << "][" << j << "] = " << X32_On(i, j) << std::endl;
       }
     }
     
@@ -493,6 +519,14 @@ void TWFFastDerivWrapper::computeMDDerivatives_dmu(const std::vector<ValueMatrix
     // Minv_dB - Minv_B[o,o].Minv_dM[o,o+v]
     ValueMatrix X432_On(nOcc, nOcc + nvirt);
     X432_On = Minv_dB[sid] - X32_On;
+    app_log() << "DEBUGMAT: X432/h_On new: " << sid << std::endl;
+    for (size_t i = 0; i < X432_On.rows(); i++)
+    {
+      for (size_t j = 0; j < X432_On.cols(); j++)
+      {
+        app_log() << "DBnew X432/h_On[" << i << "][" << j << "] = " << X432_On(i, j) << std::endl;
+      }
+    }
 
     ValueMatrix X432b_Ov(nOcc, nvirt);
     transform_Av_AoBv(X432_On, Minv_Mv[sid], X432b_Ov);
@@ -791,19 +825,48 @@ void TWFFastDerivWrapper::computeMDDerivatives_ExcDets(const std::vector<ValueMa
     ValueMatrix f_OO(nOcc, nOcc);
     BLAS::gemm('n', 'n', nOcc, nOcc, nelec, 1.0, B[sid].data(), B[sid].cols(), Minv[sid].data(), Minv[sid].cols(), 0.0,
                f_OO.data(), f_OO.cols());
-
+//
     app_log() << "DEBUGMAT: Minv_B/f_OO/Ov old: " << sid << std::endl;
     for (size_t i = 0; i < f_Ov.rows(); i++)
     {
       for (size_t j = 0; j < f_OO.cols(); j++)
       {
-        app_log() << "Minv_B/f_OO[" << i << "][" << j << "] = " << f_OO(i, j) << std::endl;
+        app_log() << "DBold Minv_B/f_OO[" << i << "][" << j << "] = " << f_OO(i, j) << std::endl;
       }
       for (size_t j = 0; j < f_Ov.cols(); j++)
       {
-        app_log() << "Minv_B/f_Ov[" << i << "][" << j << "] = " << f_Ov(i, j) << std::endl;
+        app_log() << "DBold Minv_B/f_Ov[" << i << "][" << j << "] = " << f_Ov(i, j) << std::endl;
       }
     }
+
+    app_log() << "DEBUGMAT: Minv_Mv/a_Ov old: " << sid << std::endl;
+    for (size_t i = 0; i < a_Ov.rows(); i++)
+    {
+      for (size_t j = 0; j < a_Ov.cols(); j++)
+      {
+        app_log() << "DBold         a_Ov[" << i << "][" << j << "] = " << a_Ov(i, j) << std::endl;
+      }
+    }
+
+
+    app_log() << "DEBUGMAT: Minv_dM/b_On old: " << sid << std::endl;
+    for (size_t i = 0; i < b_On.rows(); i++)
+    {
+      for (size_t j = 0; j < b_On.cols(); j++)
+      {
+        app_log() << "DBold        b_On[" << i << "][" << j << "] = " << b_On(i, j) << std::endl;
+      }
+    }
+
+    app_log() << "DEBUGMAT: Minv_dB/c_On old: " << sid << std::endl;
+    for (size_t i = 0; i < c_On.rows(); i++)
+    {
+      for (size_t j = 0; j < c_On.cols(); j++)
+      {
+        app_log() << "DBold        c_On[" << i << "][" << j << "] = " << c_On(i, j) << std::endl;
+      }
+    }
+
     // g[O,v] = X[O,e].M[e,v]
     ValueMatrix g_Ov(nOcc, nvirt);
     BLAS::gemm('n', 'n', nvirt, nOcc, nelec, 1.0, M[sid].data() + virt_offset, M[sid].cols(), X[sid].data(),
@@ -835,7 +898,16 @@ void TWFFastDerivWrapper::computeMDDerivatives_ExcDets(const std::vector<ValueMa
     {
       for (size_t j = 0; j < mat1b.cols(); j++)
       {
-        app_log() << "X32/mat1b[" << i << "][" << j << "] = " << mat1b(i, j) << std::endl;
+        app_log() << "DBold X32/mat1b[" << i << "][" << j << "] = " << mat1b(i, j) << std::endl;
+      }
+    }
+
+    app_log() << "DEBUGMAT: X432/h_On old: " << sid << std::endl;
+    for (size_t i = 0; i < h_On.rows(); i++)
+    {
+      for (size_t j = 0; j < h_On.cols(); j++)
+      {
+        app_log() << "DBold X432/h_On[" << i << "][" << j << "] = " << h_On(i, j) << std::endl;
       }
     }
 
@@ -1220,6 +1292,10 @@ void TWFFastDerivWrapper::buildIntermediates(const std::vector<ValueMatrix>& Min
     assert(X[id].cols() == ptclnum);
     int norb  = M[id].cols();
     int nvirt = norb - ptclnum;
+    app_log() << "DEBUG Intermediates: id      = " << id << std::endl;
+    app_log() << "DEBUG Intermediates: norb    = " << norb << std::endl;
+    app_log() << "DEBUG Intermediates: nvirt   = " << nvirt << std::endl;
+    app_log() << "DEBUG Intermediates: ptclnum = " << ptclnum << std::endl;
 
     // Minv_Mv = Minv[e,e].M[e,v]
     BLAS::gemm('n', 'n', nvirt, ptclnum, ptclnum, 1.0, M[id].data() + ptclnum, M[id].cols(), Minv[id].data(),
