@@ -256,6 +256,21 @@ public:
                                 const std::vector<ValueMatrix>& dM,
                                 const std::vector<ValueMatrix>& dB) const;
 
+  /** @brief Calculates derivative of observable via Tr[M^{-1} dB - M^{-1} B M^{-1} dM ].  Consistent with ground state occupation.
+   * M is slater matrix
+   * B is observable matrix op(M)
+   * dM, dB are derivatives w.r.t. mu
+   * output is d/dmu (op(D)/D), where D is determinant of slater matrix M
+   *
+   *  @param[in] Minv_dB. M^-1 dB 
+   *  @param[in] Minv_B.  M^-1 B
+   *  @param[in] Minv_dM. M^-1 dM
+   *  @return Derivative of O psi/psi = Tr[M^{-1} dB - M^{-1} B M^{-1} dM ]
+   */
+  ValueType computeGSDerivative_new(const std::vector<ValueMatrix>& Minv_dB,
+                                    const std::vector<ValueMatrix>& Minv_B,
+                                    const std::vector<ValueMatrix>& Minv_dM) const;
+
   /** @brief Calculates derivative of observable for several MultiDiracDeterminant objects
    *         calculated quantities are relative to refdet (first element is 0 in output arrays)
    *

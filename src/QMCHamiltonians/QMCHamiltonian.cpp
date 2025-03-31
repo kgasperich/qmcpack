@@ -1275,8 +1275,7 @@ void QMCHamiltonian::evaluateIonDerivsFast(ParticleSet& P,
       ValueType fval_O = 0.0;
 
 
-      /// TODO: fix this: (Minv.dB - X.dM) == (Minv_dB - Minv_B.Minv_dM)
-      fval_dmu_O = psi_wrapper_in.computeGSDerivative(Minv_, X_, dM_gs_[idim], dB_gs_[idim]);
+      fval_dmu_O = psi_wrapper_in.computeGSDerivative_new(Minv_dB_[idim], Minv_B_, Minv_dM_[idim]);
       /// TODO: fix this: already have Minv.dM as Minv_dM_
       fval_dmu = psi_wrapper_in.trAB(Minv_, dM_gs_[idim]);
 

@@ -479,7 +479,7 @@ void test_msd_wrapper(const std::string& wffile,
       twf.getGSMatrices(dB[idim], dB_gs[idim]);
       twf.getGSMatrices(dM[idim], dM_gs[idim]);
 
-      fval                           = twf.computeGSDerivative(Minv, X, dM_gs[idim], dB_gs[idim]);
+      fval                           = twf.computeGSDerivative_new(Minv_dB[idim], Minv_B, Minv_dM[idim]);
       wfcomp                         = twf.trAB(Minv, dM_gs[idim]);
       fkin_complex_gs[ionid][idim]   = fval;
       wfgrad_complex_gs[ionid][idim] = wfcomp;
@@ -606,7 +606,7 @@ void test_msd_wrapper(const std::string& wffile,
       twf.getGSMatrices(dB[idim], dB_gs[idim]);
       twf.getGSMatrices(dM[idim], dM_gs[idim]);
 
-      fval                           = twf.computeGSDerivative(Minv, X, dM_gs[idim], dB_gs[idim]);
+      fval                           = twf.computeGSDerivative_new(Minv_dB[idim], Minv_B, Minv_dM[idim]);
       wfcomp                         = twf.trAB(Minv, dM_gs[idim]);
       fnlpp_complex_gs[ionid][idim]  = fval;
       wfgrad_complex_gs[ionid][idim] = wfcomp;

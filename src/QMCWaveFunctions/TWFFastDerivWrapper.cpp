@@ -243,6 +243,31 @@ TWFFastDerivWrapper::ValueType TWFFastDerivWrapper::computeGSDerivative(const st
   return dval;
 }
 
+TWFFastDerivWrapper::ValueType TWFFastDerivWrapper::computeGSDerivative_new(
+    const std::vector<ValueMatrix>& Minv_dB,
+    const std::vector<ValueMatrix>& Minv_B,
+    const std::vector<ValueMatrix>& Minv_dM) const
+{
+  IndexType nspecies = Minv_dB.size();
+  ValueType dval     = 0.0;
+  for (int id = 0; id < nspecies; id++)
+  {
+    int ptclnum       = Minv_dB[id].rows();
+    ValueType dval_id = 0.0;
+    // Tr[M^{-1} dB - M^{-1} B M^{-1} dM ]
+    for (int i = 0; i < ptclnum; i++)
+    {
+      dval_id += Minv_dB[id][i][i];
+      for (int j = 0; j < ptclnum; j++)
+      {
+        dval_id -= Minv_B[id][i][j] * Minv_dM[id][j][i];
+      }
+    }
+    dval += dval_id;
+  }
+  return dval;
+}
+
 void TWFFastDerivWrapper::computeMDDerivatives_Obs(const std::vector<ValueMatrix>& Minv_Mv,
                                                    const std::vector<ValueMatrix>& Minv_B,
                                                    const std::vector<IndexType>& mdd_spo_ids,
