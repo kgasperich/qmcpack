@@ -249,6 +249,20 @@ public:
     return GradType();
   }
 
+  virtual void mw_evalGradSource(const RefVectorWithLeader<WaveFunctionComponent>& wfc_list,
+                              const RefVectorWithLeader<ParticleSet>& p_list,
+                              const RefVectorWithLeader<ParticleSet>& source_list,
+                              int isrc,
+                              std::vector<ParticleSet::ParticleGradient>& grad_now)
+{
+  // Default implementation that simply loops over walkers
+  const int nw = wfc_list.size();
+  for (int w = 0; w < nw; w++) {
+    GradType grad_iat = wfc_list[w].evalGradSource(p_list[w], source_list[w], isrc);
+    grad_now[w][isrc] += grad_iat;
+  }
+}
+
   /** Adds the gradient w.r.t. the iat-th particle of the
    *  source particleset (ions) of the logarithmic gradient
    *  and laplacian w.r.t. the target paritlceset (electrons).

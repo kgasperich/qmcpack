@@ -109,8 +109,10 @@ ACForce::Return_t ACForce::evaluate(ParticleSet& P)
 
   //This function returns d/dR of the sum of all observables in the physical hamiltonian.
   //Note that the sign will be flipped based on definition of force = -d/dR.
-  if (fastDerivatives_)
+  if (fastDerivatives_){
     ham_.evaluateIonDerivsFast(P, ions_, psi_, psi_wrapper_, hf_force_, wf_grad_);
+    //ham_.mw_evaluateIonDerivsFast(P, ions_, psi_, psi_wrapper_, hf_force_, wf_grad_);
+  }
   else
     ham_.evaluateIonDerivs(P, ions_, psi_, hf_force_, pulay_force_, wf_grad_);
 
@@ -123,7 +125,6 @@ ACForce::Return_t ACForce::evaluate(ParticleSet& P)
     ham_.evaluateElecGrad(P, psi_, el_grad, delta_);
     swt_.computeSWT(P, ions_, el_grad, P.G, sw_pulay_, sw_grad_);
   }
-
   //Now we compute the regularizer.
   //WE ASSUME THAT psi_.evaluateLog(P) HAS ALREADY BEEN CALLED AND Grad(logPsi)
   //IS ALREADY UP TO DATE FOR THIS CONFIGURATION.
@@ -132,6 +133,84 @@ ACForce::Return_t ACForce::evaluate(ParticleSet& P)
 
   return 0.0;
 };
+
+void ACForce::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                          const RefVectorWithLeader<ParticleSet>& p_list)
+{
+	  const int nw = op_list.size();
+  // No walkers? Just return.
+  if (nw == 0)
+    return;
+
+  // Loop over walkers, casting each OperatorBase to an ACForce
+  for (int iw = 0; iw < nw; ++iw)
+  {
+    ACForce& this_op = static_cast<ACForce&>(op_list[iw]);
+    ParticleSet& P    = p_list[iw];
+
+    // Call the single-walker version directly.
+    // This respects the fastDerivatives_ check inside evaluate(...).
+    this_op.evaluate(P);
+  }
+	/*
+  const int nw = op_list.size();
+
+  // Cast first operator as ACForce to initialize the leaders
+  ACForce& op0 = static_cast<ACForce&>(op_list[0]);
+
+  RefVectorWithLeader<QMCHamiltonian> ham_list(op0.ham_);
+  RefVectorWithLeader<ParticleSet> ion_list(op0.ions_);
+  RefVectorWithLeader<TrialWaveFunction> psi_list(op0.psi_);
+  RefVectorWithLeader<TWFFastDerivWrapper> psi_wrapper_list(op0.psi_wrapper_);
+  RefVectorWithLeader<ParticleSet::ParticlePos> hf_force_list(op0.hf_force_);
+  RefVectorWithLeader<ParticleSet::ParticlePos> wf_grad_list(op0.wf_grad_);
+
+  // Add all walkers, starting from iw=0
+  for (int iw = 0; iw < nw; ++iw)
+  {
+    ACForce& op = static_cast<ACForce&>(op_list[iw]);
+    ham_list.push_back(op.ham_);
+    ion_list.push_back(op.ions_);
+    psi_list.push_back(op.psi_);
+    psi_wrapper_list.push_back(op.psi_wrapper_);
+    hf_force_list.push_back(op.hf_force_);
+    wf_grad_list.push_back(op.wf_grad_);
+  }
+
+  // Fast path: batched force evaluation
+  if (op0.fastDerivatives_)
+  {
+    QMCHamiltonian& ham_leader = ham_list.getLeader();
+    ham_leader.mw_evaluateIonDerivsFast(ham_list, p_list, ion_list,
+                                        psi_list, psi_wrapper_list,
+                                        hf_force_list, wf_grad_list);
+  }
+
+  // Per-walker logic (non-fast path + space warp)
+  for (int iw = 0; iw < nw; ++iw)
+  {
+    ACForce& op = static_cast<ACForce&>(op_list[iw]);
+    ParticleSet& P = p_list[iw];
+
+    if (!op.fastDerivatives_)
+    {
+      op.ham_.evaluateIonDerivs(P, op.ions_, op.psi_,
+                                op.hf_force_, op.pulay_force_, op.wf_grad_);
+    }
+
+    if (op.useSpaceWarp_)
+    {
+      ParticleSet::ParticlePos el_grad(P.getTotalNum());
+      el_grad = 0.0;
+      op.ham_.evaluateElecGrad(P, op.psi_, el_grad, op.delta_);
+      op.swt_.computeSWT(P, op.ions_, el_grad, P.G,
+                         op.sw_pulay_, op.sw_grad_);
+    }
+
+    op.f_epsilon_ = op.compute_regularizer_f(op.psi_.G, op.reg_epsilon_);
+  }
+  */
+}
 
 void ACForce::resetTargetParticleSet(ParticleSet& P) {}
 

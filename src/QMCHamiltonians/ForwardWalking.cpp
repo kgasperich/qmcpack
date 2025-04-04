@@ -62,6 +62,22 @@ ForwardWalking::Return_t ForwardWalking::calculate(ParticleSet& P)
   return 0.0;
 }
 
+void ForwardWalking::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<ForwardWalking&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void ForwardWalking::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<ForwardWalking&>(static_cast<const ForwardWalking&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
 ForwardWalking::Return_t ForwardWalking::evaluate(ParticleSet& P)
 {
   for (int i = 0; i < nobservables_; i++)

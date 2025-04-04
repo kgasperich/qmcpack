@@ -108,6 +108,22 @@ std::unique_ptr<OperatorBase> GridExternalPotential::makeClone(ParticleSet& P, T
   return std::make_unique<GridExternalPotential>(*this);
 }
 
+void GridExternalPotential::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<GridExternalPotential&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void GridExternalPotential::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<GridExternalPotential&>(static_cast<const GridExternalPotential&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
 
 GridExternalPotential::Return_t GridExternalPotential::evaluate(ParticleSet& P)
 {

@@ -108,7 +108,6 @@ public:
   bool allow_walker_logs;
   /// walker logs input
   WalkerLogInput walker_logs_input;
-  //xmlNodePtr walker_logs_xml;
 
 protected:
   /// a collection of driver-specific objects needed per batch
@@ -499,6 +498,7 @@ protected:
 
   // reference to the captured WalkerConfigurations
   WalkerConfigurations& walker_configs_ref_;
+
 
   /// update the global offsets of walker configurations after active walkers being touched.
   static void setWalkerOffsets(WalkerConfigurations&, Communicate* comm);

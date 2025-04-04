@@ -67,6 +67,22 @@ void SelfHealingOverlapLegacy::registerCollectables(std::vector<ObservableHelper
   h5o.set_dimensions(ng, my_index_);
 }
 
+void SelfHealingOverlapLegacy::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<SelfHealingOverlapLegacy&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void SelfHealingOverlapLegacy::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<SelfHealingOverlapLegacy&>(static_cast<const SelfHealingOverlapLegacy&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
 
 SelfHealingOverlapLegacy::Return_t SelfHealingOverlapLegacy::evaluate(ParticleSet& P)
 {

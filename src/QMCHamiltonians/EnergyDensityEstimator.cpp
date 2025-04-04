@@ -253,6 +253,21 @@ void EnergyDensityEstimator::resetTargetParticleSet(ParticleSet& P)
 
 
 //#define ENERGYDENSITY_CHECK
+void EnergyDensityEstimator::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<EnergyDensityEstimator&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void EnergyDensityEstimator::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<EnergyDensityEstimator&>(static_cast<const EnergyDensityEstimator&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
 
 EnergyDensityEstimator::Return_t EnergyDensityEstimator::evaluate(ParticleSet& P)
 {

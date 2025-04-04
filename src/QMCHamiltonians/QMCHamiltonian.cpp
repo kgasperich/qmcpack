@@ -739,6 +739,61 @@ void QMCHamiltonian::auxHevaluate(ParticleSet& P, Walker_t& ThisWalker)
     auxH[i]->setParticlePropertyList(P.PropertyList, myIndex);
   }
 }
+
+
+void QMCHamiltonian::mw_auxHevaluate(const RefVectorWithLeader<QMCHamiltonian>& ham_list,
+                                     const RefVectorWithLeader<ParticleSet>& elec_list,
+                                     const RefVectorWithLeader<Walker_t>& walker_list)
+{
+#if !defined(REMOVE_TRACEMANAGER)
+  for (int iw = 0; iw < walker_list.size(); ++iw)
+    ham_list[iw].collect_walker_traces(walker_list[iw], elec_list[iw].current_step);
+#endif
+
+  const int num_auxH = ham_list[0].auxH.size();
+  const int nw       = walker_list.size();
+
+  // Set histories (still per-walker, per-op)
+  for (int i = 0; i < num_auxH; ++i)
+    for (int iw = 0; iw < nw; ++iw)
+      ham_list[iw].auxH[i]->setHistories(walker_list[iw]);
+
+  // Batch evaluate each auxH operator across walkers
+  for (int i = 0; i < num_auxH; ++i)
+  {
+    // Create RefVectorWithLeader for operators (same type across walkers)
+    RefVectorWithLeader<OperatorBase> op_list(*ham_list[0].auxH[i]); // Leader is first operator
+    for (int iw = 0; iw < nw; ++iw)
+      op_list.push_back(*ham_list[iw].auxH[i]); // Add all walkers' auxH[i]
+
+    // Create RefVectorWithLeader for particles
+    RefVectorWithLeader<ParticleSet> p_list(elec_list[0]); // Leader is first ParticleSet
+    for (int iw = 0; iw < nw; ++iw)
+      p_list.push_back(elec_list[iw]);
+
+    // Call mw_evaluate with the properly constructed RefVectorWithLeader
+    op_list.getLeader().mw_evaluate(op_list, p_list);
+  }
+
+  // Observables, traces, properties
+  for (int iw = 0; iw < nw; ++iw)
+  {
+    QMCHamiltonian& ham = ham_list[iw];
+    ParticleSet& elec   = elec_list[iw];
+
+    for (int i = 0; i < num_auxH; ++i)
+    {
+      //      RealType sink = ham.auxH[i]->evaluate(elec);
+      ham.auxH[i]->setObservables(ham.Observables);
+#if !defined(REMOVE_TRACEMANAGER)
+      ham.auxH[i]->collectScalarTraces();
+#endif
+      ham.auxH[i]->setParticlePropertyList(elec.PropertyList, ham.myIndex);
+    }
+  }
+}
+
+
 ///Evaluate properties only.
 void QMCHamiltonian::auxHevaluate(ParticleSet& P, Walker_t& ThisWalker, bool do_properties, bool do_collectables)
 {
@@ -1037,6 +1092,215 @@ RefVectorWithLeader<OperatorBase> QMCHamiltonian::extract_HC_list(const RefVecto
     HC_list.push_back(*(H.H[id]));
   return HC_list;
 }
+
+void QMCHamiltonian::mw_evaluateIonDerivsFast(const RefVectorWithLeader<QMCHamiltonian>& ham_list,
+                                              const RefVectorWithLeader<ParticleSet>& elec_list,
+                                              const RefVectorWithLeader<ParticleSet>& ion_list,
+                                              const RefVectorWithLeader<TrialWaveFunction>& psi_list,
+                                              const RefVectorWithLeader<TWFFastDerivWrapper>& psi_wrapper_list,
+                                              RefVectorWithLeader<ParticleSet::ParticlePos>& hf_force_list,
+                                              RefVectorWithLeader<ParticleSet::ParticlePos>& wf_grad_list)
+{
+  if (ham_list.empty())
+    return;
+
+  const int nw      = ham_list.size();
+  const int ngroups = psi_wrapper_list[0].numGroups();
+  const int nions   = ion_list.getLeader().getTotalNum();
+  for (int iw = 0; iw < nw; ++iw)
+    elec_list[iw].update();
+
+  // Wavefunction data
+  std::vector<std::vector<ValueMatrix>> M(nw), M_gs(nw), Minv(nw), B(nw), B_gs(nw), X(nw);
+  // Derivatives
+  // Derivatives - [walker][dim][group] organization
+  std::vector<std::vector<std::vector<ValueMatrix>>> dM(nw);
+  std::vector<std::vector<std::vector<ValueMatrix>>> dM_gs(nw);
+  std::vector<std::vector<std::vector<ValueMatrix>>> dB(nw);
+  std::vector<std::vector<std::vector<ValueMatrix>>> dB_gs(nw);
+
+
+  // Force arrays
+  std::vector<ParticleSet::ParticleGradient> wfgradraw(nw), dedr_complex(nw);
+  std::vector<ParticleSet::ParticlePos> hfdiag(nw), pulayterms(nw);
+
+  // (A) Initialize per walker
+  // Initialize force arrays and basic matrix sizes
+  for (int iw = 0; iw < nw; ++iw)
+  {
+    ParticleSet& ions = ion_list[iw];
+    const int nions   = ions.getTotalNum();
+
+    // Initialize gradients and forces
+    wfgradraw[iw].resize(nions);
+    dedr_complex[iw].resize(nions);
+    hfdiag[iw].resize(nions);
+    pulayterms[iw].resize(nions);
+
+    // Zero out the values
+    wfgradraw[iw]    = 0.0;
+    dedr_complex[iw] = 0.0;
+    hfdiag[iw]       = 0.0;
+    pulayterms[iw]   = 0.0;
+
+    // Resize first level matrices
+    M[iw].resize(ngroups);
+    M_gs[iw].resize(ngroups);
+    Minv[iw].resize(ngroups);
+    B[iw].resize(ngroups);
+    B_gs[iw].resize(ngroups);
+    X[iw].resize(ngroups);
+
+    // Resize derivative matrices (dimension level)
+    dM[iw].resize(OHMMS_DIM);
+    dM_gs[iw].resize(OHMMS_DIM);
+    dB[iw].resize(OHMMS_DIM);
+    dB_gs[iw].resize(OHMMS_DIM);
+
+    // Resize derivative matrices (group level)
+    for (int dim = 0; dim < OHMMS_DIM; ++dim)
+    {
+      dM[iw][dim].resize(ngroups);
+      dM_gs[iw][dim].resize(ngroups);
+      dB[iw][dim].resize(ngroups);
+      dB_gs[iw][dim].resize(ngroups);
+    }
+
+    // Resize all matrices to final dimensions
+    ParticleSet& P            = elec_list[iw];
+    TWFFastDerivWrapper& psiW = psi_wrapper_list[iw];
+    for (int gid = 0; gid < ngroups; ++gid)
+    {
+      int sid    = psiW.getTWFGroupIndex(gid);
+      int norbs  = psiW.numOrbitals(sid);
+      int first  = P.first(gid);
+      int last   = P.last(gid);
+      int nptcls = last - first;
+
+      // Resize regular matrices
+      M[iw][gid].resize(nptcls, norbs);
+      M_gs[iw][gid].resize(nptcls, nptcls);
+      Minv[iw][gid].resize(nptcls, nptcls);
+      B[iw][gid].resize(nptcls, norbs);
+      B_gs[iw][gid].resize(nptcls, nptcls);
+      X[iw][gid].resize(nptcls, nptcls);
+
+      // Resize derivative matrices
+      for (int dim = 0; dim < OHMMS_DIM; ++dim)
+      {
+        dM[iw][dim][gid].resize(nptcls, norbs);
+        dM_gs[iw][dim][gid].resize(nptcls, nptcls);
+        dB[iw][dim][gid].resize(nptcls, norbs);
+        dB_gs[iw][dim][gid].resize(nptcls, nptcls);
+      }
+    }
+  }
+
+  // Wipe regular matrices in batch
+  auto& psiW_leader = psi_wrapper_list.getLeader();
+  psiW_leader.mw_wipeMatrices(psi_wrapper_list, M);
+  psiW_leader.mw_wipeMatrices(psi_wrapper_list, M_gs);
+  psiW_leader.mw_wipeMatrices(psi_wrapper_list, Minv);
+  psiW_leader.mw_wipeMatrices(psi_wrapper_list, B);
+  psiW_leader.mw_wipeMatrices(psi_wrapper_list, B_gs);
+  psiW_leader.mw_wipeMatrices(psi_wrapper_list, X);
+
+/*  // Wipe derivative matrices per walker
+  psiW_leader.mw_wipeDerivMatrices(psi_wrapper_list, dM);
+  psiW_leader.mw_wipeDerivMatrices(psi_wrapper_list, dM_gs);
+  psiW_leader.mw_wipeDerivMatrices(psi_wrapper_list, dB);
+  psiW_leader.mw_wipeDerivMatrices(psi_wrapper_list, dB_gs);
+*/
+
+  // (E) Batched wavefunction building
+  psiW_leader.mw_getM(psi_wrapper_list, elec_list, M);
+  psiW_leader.mw_getGSMatrices(psi_wrapper_list, M, M_gs);
+  psiW_leader.mw_invertMatrices(psi_wrapper_list, M_gs, Minv);
+
+  const auto& leader_ham = ham_list.getLeader();
+  for (int i = 0; i < leader_ham.H.size(); ++i)
+  {
+    // Create reference vector with the leader operator
+    RefVectorWithLeader<OperatorBase> op_list(*leader_ham.H[i]);
+    // Add all walker operators to the reference vector
+    for (int iw = 0; iw < nw; ++iw)
+      if (i < ham_list[iw].H.size())
+        op_list.push_back(*ham_list[iw].H[i]);
+
+    if (leader_ham.H[i]->dependsOnWaveFunction())
+      // Call the batched implementation for wavefunction-dependent operators
+      leader_ham.H[i]->mw_evaluateOneBodyOpMatrix(op_list, elec_list, psi_wrapper_list, B);
+    else
+      // Call the batched implementation for non-wavefunction-dependent operators
+      leader_ham.H[i]->mw_evaluateIonDerivs(op_list, elec_list, ion_list, psi_list, hfdiag, pulayterms);
+  }
+
+  // Now batch the B_gs and X matrix creation
+  psiW_leader.mw_getGSMatrices(psi_wrapper_list, B, B_gs);
+  psiW_leader.mw_buildX(psi_wrapper_list, Minv, B_gs, X);
+
+  // Process ion by ion, batching where possible
+  for (int iat = 0; iat < nions; iat++)
+  { 
+    psiW_leader.mw_wipeDerivMatrices(psi_wrapper_list, dM);
+    psiW_leader.mw_wipeDerivMatrices(psi_wrapper_list, dM_gs);
+    psiW_leader.mw_wipeDerivMatrices(psi_wrapper_list, dB);
+    psiW_leader.mw_wipeDerivMatrices(psi_wrapper_list, dB_gs);
+
+    // Process each walker for Jastrow gradient (this can't be easily batched)
+    psiW_leader.mw_evaluateJastrowGradSource(psi_wrapper_list, elec_list, ion_list, iat, wfgradraw);
+    psiW_leader.mw_getIonGradM(psi_wrapper_list, elec_list, ion_list, iat, dM);
+    const auto& leader_ham = ham_list.getLeader();
+    for (int i = 0; i < leader_ham.H.size(); ++i)
+      if (leader_ham.H[i]->dependsOnWaveFunction())
+      {
+        // Create reference vectors for each operator type
+        RefVectorWithLeader<OperatorBase> op_list(*leader_ham.H[i]);
+
+        // Fill the reference vector with operator references
+        for (int iw = 0; iw < nw; ++iw)
+          if (i < ham_list[iw].H.size())
+            op_list.push_back(*ham_list[iw].H[i]);
+
+        // Call the batched implementation
+//        leader_ham.H[i]->mw_evaluateOneBodyOpMatrixForceDeriv(op_list, elec_list, ion_list, psi_wrapper_list, iat, dB);
+        for (int iw = 0; iw < nw; ++iw) 
+		ham_list[iw].H[i]->evaluateOneBodyOpMatrixForceDeriv(elec_list[iw], ion_list[iw], psi_wrapper_list[iw], iat, dB[iw]);
+      }
+    // Process each dimension in batch
+    for (int idim = 0; idim < OHMMS_DIM; idim++)
+    {
+      // Batch the GS matrices computation for all walkers
+      psiW_leader.mw_getGSMatricesForDerivatives(psi_wrapper_list, dB, dB_gs, idim);
+      psiW_leader.mw_getGSMatricesForDerivatives(psi_wrapper_list, dM, dM_gs, idim);
+
+      // Call batched version of computeGSDerivative for all walkers
+      std::vector<ValueType> fvals(nw);
+      std::vector<ValueType> wfcomps(nw);
+      psiW_leader.mw_computeGSDerivative(psi_wrapper_list, Minv, X, dM_gs, dB_gs, fvals, idim);
+      psiW_leader.mw_trAB(psi_wrapper_list, Minv, dM_gs, wfcomps, idim);
+
+      // Assign results to appropriate places in output arrays
+      for (int iw = 0; iw < nw; ++iw)
+      {
+        dedr_complex[iw][iat][idim] = fvals[iw];
+        wfgradraw[iw][iat][idim] += wfcomps[iw];
+      }
+    }
+
+    // Convert to real values for all walkers
+    for (int iw = 0; iw < nw; ++iw)
+    {
+      convertToReal(dedr_complex[iw][iat], hf_force_list[iw][iat]);
+      convertToReal(wfgradraw[iw][iat], wf_grad_list[iw][iat]);
+    }
+  }
+
+  // Add diagonal corrections for all walkers
+  for (int iw = 0; iw < nw; ++iw)
+    hf_force_list[iw] += hfdiag[iw];
+}
+
 
 void QMCHamiltonian::evaluateIonDerivsFast(ParticleSet& P,
                                            ParticleSet& ions,

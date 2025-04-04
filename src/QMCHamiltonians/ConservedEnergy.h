@@ -74,6 +74,21 @@ struct ConservedEnergy : public OperatorBase
   void resetTargetParticleSet(ParticleSet& P) override {}
 
   std::string getClassName() const override { return "ConservedEnergy"; }
+  void mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                 const RefVectorWithLeader<ParticleSet>& p_list) override
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<ConservedEnergy&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                 const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                 const RefVectorWithLeader<ParticleSet>& p_list) const override
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<ConservedEnergy&>(static_cast<const ConservedEnergy&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
 
   Return_t evaluate(ParticleSet& P) override
   {

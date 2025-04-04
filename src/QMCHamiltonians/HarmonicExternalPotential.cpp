@@ -59,6 +59,22 @@ std::unique_ptr<OperatorBase> HarmonicExternalPotential::makeClone(ParticleSet& 
   return std::make_unique<HarmonicExternalPotential>(*this);
 }
 
+void HarmonicExternalPotential::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<HarmonicExternalPotential&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void HarmonicExternalPotential::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<HarmonicExternalPotential&>(static_cast<const HarmonicExternalPotential&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
 
 HarmonicExternalPotential::Return_t HarmonicExternalPotential::evaluate(ParticleSet& P)
 {

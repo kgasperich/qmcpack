@@ -258,6 +258,22 @@ SymTensor<StressPBC::RealType, OHMMS_DIM> StressPBC::evalConsts_AA(ParticleSet& 
   app_log() << "   PBCAA total constant \n" << tmpconsts << std::endl;
   return tmpconsts;
 }
+void StressPBC::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<StressPBC&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void StressPBC::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<StressPBC&>(static_cast<const StressPBC&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
 
 StressPBC::Return_t StressPBC::evaluate(ParticleSet& P)
 {

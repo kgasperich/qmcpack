@@ -594,6 +594,22 @@ void DensityMatrices1B::warmup_sampling()
   }
 }
 
+void DensityMatrices1B::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<DensityMatrices1B&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void DensityMatrices1B::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<DensityMatrices1B&>(static_cast<const DensityMatrices1B&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
 
 DensityMatrices1B::Return_t DensityMatrices1B::evaluate(ParticleSet& P)
 {

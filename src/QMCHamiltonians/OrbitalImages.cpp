@@ -303,6 +303,23 @@ void OrbitalImages::report(const std::string& pad)
 }
 
 
+void OrbitalImages::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<OrbitalImages&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void OrbitalImages::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<OrbitalImages&>(static_cast<const OrbitalImages&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
+
 OrbitalImages::Return_t OrbitalImages::evaluate(ParticleSet& P)
 {
   //only the first thread of the master task writes the orbitals

@@ -121,6 +121,22 @@ void StaticStructureFactor::registerCollectables(std::vector<ObservableHelper>& 
   }
 }
 
+void StaticStructureFactor::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<StaticStructureFactor&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void StaticStructureFactor::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<StaticStructureFactor&>(static_cast<const StaticStructureFactor&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
 
 StaticStructureFactor::Return_t StaticStructureFactor::evaluate(ParticleSet& P)
 {

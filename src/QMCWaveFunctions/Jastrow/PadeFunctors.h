@@ -120,6 +120,17 @@ struct PadeFunctor : public OptimizableFunctorBase
     return sum;
   }
 
+
+
+   inline  void evaluate_batch(const std::vector<T>& r,
+                      std::vector<T>& u,
+                      std::vector<T>& dudr,
+                      std::vector<T>& d2udr2,
+                      std::vector<T>& d3udr3)
+  {
+    throw std::runtime_error("evaluate_batch not implemented for PadeFunctor!");
+  }
+
   /** evaluate sum of the pair potentials FIXME
    * @return \f$\sum u(r_j)\f$ for r_j < cutoff_radius
    */
@@ -377,6 +388,14 @@ struct Pade2ndOrderFunctor : public OptimizableFunctorBase
     dudr        = u * (w - B * u * v);
     d2udr2      = 2.0 * u * u * u * (C - B * A);
     return u * v;
+  }
+inline void evaluate_batch(const std::vector<T>& r,
+                      std::vector<T>& u,
+                      std::vector<T>& dudr,
+                      std::vector<T>& d2udr2,
+                      std::vector<T>& d3udr3) 
+  {
+    throw std::runtime_error("evaluate_batch not implemented for Pade2ndOrderFunctor!");
   }
 
   inline real_type evaluate(real_type r, real_type& dudr, real_type& d2udr2, real_type& d3udr3) const

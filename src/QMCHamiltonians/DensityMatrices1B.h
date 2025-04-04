@@ -154,6 +154,13 @@ public:
   std::unique_ptr<OperatorBase> makeClone(ParticleSet& P, TrialWaveFunction& psi) final;
   bool put(xmlNodePtr cur) override;
   Return_t evaluate(ParticleSet& P) override;
+  void mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                 const RefVectorWithLeader<ParticleSet>& p_list) override;
+
+void mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                 const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                 const RefVectorWithLeader<ParticleSet>& p_list) const override;
+
 
   //optional standard interface
   void getRequiredTraces(TraceManager& tm) override;

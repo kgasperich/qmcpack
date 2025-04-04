@@ -201,6 +201,22 @@ void SpinDensity::registerCollectables(std::vector<ObservableHelper>& h5desc, hd
   }
 }
 
+void SpinDensity::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<SpinDensity&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void SpinDensity::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<SpinDensity&>(static_cast<const SpinDensity&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
 
 SpinDensity::Return_t SpinDensity::evaluate(ParticleSet& P)
 {

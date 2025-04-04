@@ -87,7 +87,7 @@ struct CubicSplineSingle : public OptimizableFunctorBase
    */
   inline real_type evaluate(real_type r, real_type& dudr, real_type& d2udr2, real_type& d3udr3)
   {
-    std::cerr << "Third derivative not implemented for CubicSplineSingle.\n";
+    std::cerr << "Third derivative not implemented for SplineFunctors.\n";
     return OutFunc.splint(r, dudr, d2udr2);
   }
 
@@ -121,6 +121,15 @@ struct CubicSplineSingle : public OptimizableFunctorBase
     real_type dudr, d2udr2;
     OutFunc.splint(r, dudr, d2udr2);
     return dudr;
+  }
+
+ inline   void evaluate_batch(const std::vector<RT>& r,
+                      std::vector<RT>& u,
+                      std::vector<RT>& dudr,
+                      std::vector<RT>& d2udr2,
+                      std::vector<RT>& d3udr3)
+  {
+    throw std::runtime_error("evaluate_batch not implemented for SplineFunctors!");
   }
 
   inline real_type evaluateV(const int iat,

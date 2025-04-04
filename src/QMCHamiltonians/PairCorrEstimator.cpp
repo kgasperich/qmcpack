@@ -114,6 +114,23 @@ int PairCorrEstimator::gen_pair_id(const int ig, const int jg, const int ns)
     return ns * (ns - 1) / 2 - (ns - ig) * (ns - ig - 1) / 2 + jg;
 }
 
+void PairCorrEstimator::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<PairCorrEstimator&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void PairCorrEstimator::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<PairCorrEstimator&>(static_cast<const PairCorrEstimator&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
+
 PairCorrEstimator::Return_t PairCorrEstimator::evaluate(ParticleSet& P)
 {
   BufferType& collectables(P.Collectables);

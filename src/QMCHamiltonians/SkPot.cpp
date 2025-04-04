@@ -44,6 +44,22 @@ SkPot::Return_t SkPot::evaluate(ParticleSet& P)
   throw std::runtime_error("SkPot::evaluate not implemented. There was an implementation with"
                            " complex-valued storage that may be resurrected using real-valued storage.");
 }
+void SkPot::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<SkPot&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void SkPot::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<SkPot&>(static_cast<const SkPot&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
 
 bool SkPot::put(xmlNodePtr cur)
 {

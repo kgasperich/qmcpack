@@ -171,6 +171,25 @@ public:
    */
   void evaluateV(const ParticleSet& P, int iat, ORBT* restrict vals) override;
 
+
+
+void mw_evaluateGradSourceV(
+    const RefVectorWithLeader<SoaBasisSetBase<ORBT>>& basis_list,
+    const RefVectorWithLeader<ParticleSet>& P_list,
+    int iat,
+    const RefVectorWithLeader<ParticleSet>& ions_list,
+    int jion,
+    OffloadMWVGLArray& vgl_v)override;
+
+
+/*void mw_evaluateGradSourceV_batch(
+    const RefVectorWithLeader<SoaBasisSetBase<ORBT>>& basis_list,
+    const RefVectorWithLeader<ParticleSet>& P_list,
+    int iat,
+    const RefVectorWithLeader<ParticleSet>& ions_list,
+    const std::vector<int>& iat_src_list,
+    OffloadMWVGLArray& vgl_v)override;*/
+
   void evaluateGradSourceV(const ParticleSet& P, int iat, const ParticleSet& ions, int jion, vgl_type& vgl) override;
 
   void evaluateGradSourceVGL(const ParticleSet& P,

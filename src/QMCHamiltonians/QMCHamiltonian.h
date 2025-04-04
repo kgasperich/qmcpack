@@ -217,6 +217,9 @@ public:
   inline FullPrecRealType getKineticEnergy() { return KineticEnergy; }
   void auxHevaluate(ParticleSet& P);
   void auxHevaluate(ParticleSet& P, Walker_t& ThisWalker);
+  static void mw_auxHevaluate(const RefVectorWithLeader<QMCHamiltonian>& ham_list,
+                              const RefVectorWithLeader<ParticleSet>& elec_list,
+                              const RefVectorWithLeader<Walker_t>& walker_list);
   void auxHevaluate(ParticleSet& P, Walker_t& ThisWalker, bool do_properties, bool do_collectables);
   void rejectedMove(ParticleSet& P, Walker_t& ThisWalker);
 
@@ -303,6 +306,14 @@ public:
                              TWFFastDerivWrapper& psi_wrapper,
                              ParticleSet::ParticlePos& dedr,
                              ParticleSet::ParticlePos& wf_grad);
+
+  void mw_evaluateIonDerivsFast(const RefVectorWithLeader<QMCHamiltonian>& ham_list,
+                                const RefVectorWithLeader<ParticleSet>& elec_list,
+                                const RefVectorWithLeader<ParticleSet>& ion_list,
+                                const RefVectorWithLeader<TrialWaveFunction>& psi_list,
+                                const RefVectorWithLeader<TWFFastDerivWrapper>& psi_wrapper_list,
+                                RefVectorWithLeader<ParticleSet::ParticlePos>& hf_force_list,
+                                RefVectorWithLeader<ParticleSet::ParticlePos>& wf_grad_list);
 
   /** Evaluate the electron gradient of the local energy.
   * @param psi Trial Wave Function

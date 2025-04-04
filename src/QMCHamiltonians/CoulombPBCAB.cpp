@@ -118,6 +118,22 @@ void CoulombPBCAB::deleteParticleQuantities()
 }
 #endif
 
+void CoulombPBCAB::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<CoulombPBCAB&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void CoulombPBCAB::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<CoulombPBCAB&>(static_cast<const CoulombPBCAB&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
 
 CoulombPBCAB::Return_t CoulombPBCAB::evaluate(ParticleSet& P)
 {

@@ -44,6 +44,22 @@ SkEstimator::SkEstimator(ParticleSet& source)
 
 void SkEstimator::resetTargetParticleSet(ParticleSet& P) { sourcePtcl = &P; }
 
+void SkEstimator::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<SkEstimator&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void SkEstimator::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<SkEstimator&>(static_cast<const SkEstimator&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
 SkEstimator::Return_t SkEstimator::evaluate(ParticleSet& P)
 {
   //sum over species

@@ -132,6 +132,14 @@ public:
                      HessVector& grad_grad_psi,
                      GGGVector& grad_grad_grad_psi) final;
 
+ void mw_evaluate_notranspose(const RefVectorWithLeader<SPOSetT>& spo_list,
+                            const RefVectorWithLeader<ParticleSet>& P_list,
+                            int first,
+                            int last,
+                            const RefVector<ValueMatrix>& logdet_list,
+                            const RefVector<GradMatrix>& dlogdet_list,
+                            const RefVector<ValueMatrix>& d2logdet_list) const override;
+
   void evaluate_notranspose(const ParticleSet& P,
                             int first,
                             int last,
@@ -198,6 +206,21 @@ public:
                           int iat_src,
                           GradMatrix& grad_phi) final;
 
+  void mw_evaluateGradSource(const RefVectorWithLeader<SPOSetT>& spo_list,
+                                          const RefVectorWithLeader<ParticleSet>& P_list,
+                                          int first,
+                                          int last,
+                                          const RefVectorWithLeader<ParticleSet>& source_list,
+                                          int iat_src,
+                                          RefVector<GradMatrix>& gradphi_list) const override; 
+
+/*void mw_evaluateGradSource_batch(const RefVectorWithLeader<SPOSetT>& spo_list,
+                                          const RefVectorWithLeader<ParticleSet>& P_list,
+                                          int first,
+                                          int last,
+                                          const RefVectorWithLeader<ParticleSet>& source_list,
+                                          const std::vector<int>& iat_src_list,
+                                          RefVector<GradMatrix>& gradphi_list) const override;*/
   /**
  * \brief Calculate ion derivatives of SPO's, their gradients, and their laplacians.
  *  
@@ -269,7 +292,12 @@ private:
                          ValueMatrix& d2logdet) const;
   ///These two functions unpack the data in vgh_type temp object into wavefunction friendly data structures.
 
-
+  void mw_evaluate_vgl_impl_batched(const OffloadMWVGLArray& phi_vgl_v,
+                                      int iw,
+                                      int row_id,
+                                      ValueMatrix& logdet,
+                                      GradMatrix& dlogdet,
+                                      ValueMatrix& d2logdet) const;
   ///This unpacks temp into vectors psi, dpsi, and d2psi.
   void evaluate_vgh_impl(const vgh_type& temp, ValueVector& psi, GradVector& dpsi, HessVector& d2psi) const;
 
@@ -334,6 +362,8 @@ private:
   NewTimer& basis_timer_;
   /// timer for MO
   NewTimer& mo_timer_;
+  /// timer for eval_notranspose
+  NewTimer& eval_notranspose_timer_;
 };
 } // namespace qmcplusplus
 #endif

@@ -65,6 +65,14 @@ public:
 
   Return_t evaluate(ParticleSet& P) override;
 
+  void mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                   const RefVectorWithLeader<ParticleSet>& p_list) override;
+
+  void mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                   const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                   const RefVectorWithLeader<ParticleSet>& p_list) const override;
+
+
   Return_t evaluateValueAndDerivatives(ParticleSet& P,
                                        const opt_variables_type& optvars,
                                        const Vector<ValueType>& dlogpsi,
@@ -125,6 +133,27 @@ public:
                                          const TWFFastDerivWrapper& psi,
                                          const int iat,
                                          std::vector<std::vector<ValueMatrix>>& Bforce) override;
+
+  virtual void mw_evaluateOneBodyOpMatrix(const RefVectorWithLeader<OperatorBase>& op_list,
+                                          const RefVectorWithLeader<ParticleSet>& p_list,
+                                          const RefVectorWithLeader<TWFFastDerivWrapper>& psi_list,
+                                          std::vector<std::vector<ValueMatrix>>& B_list) override;
+
+  virtual void mw_evaluateIonDerivs(const RefVectorWithLeader<OperatorBase>& op_list,
+                                    const RefVectorWithLeader<ParticleSet>& p_list,
+                                    const RefVectorWithLeader<ParticleSet>& ion_list,
+                                    const RefVectorWithLeader<TrialWaveFunction>& psi_list,
+                                    std::vector<ParticleSet::ParticlePos>& hf_terms,
+                                    std::vector<ParticleSet::ParticlePos>& pulay_terms) const override;
+
+  virtual void mw_evaluateOneBodyOpMatrixForceDeriv(
+      const RefVectorWithLeader<OperatorBase>& ham_list,
+      const RefVectorWithLeader<ParticleSet>& P_list,
+      const RefVectorWithLeader<ParticleSet>& source_list,
+      const RefVectorWithLeader<TWFFastDerivWrapper>& psi_list,
+      const int iat,
+      std::vector<std::vector<std::vector<ValueMatrix>>>& Bforce_list) const override;
+
 
 #if !defined(REMOVE_TRACEMANAGER)
   Return_t evaluate_sp(ParticleSet& P);

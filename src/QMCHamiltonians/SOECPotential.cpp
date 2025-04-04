@@ -65,6 +65,14 @@ SOECPotential::~SOECPotential() = default;
 
 void SOECPotential::resetTargetParticleSet(ParticleSet& P) {}
 
+void SOECPotential::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<SOECPotential&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+
 SOECPotential::Return_t SOECPotential::evaluate(ParticleSet& P)
 {
   evaluateImpl(P, false);

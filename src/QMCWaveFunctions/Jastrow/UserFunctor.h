@@ -257,7 +257,14 @@ struct UserFunctor : public OptimizableFunctorBase
     return true;
   }
 
-
+  inline void evaluate_batch(const std::vector<T>& r,
+                      std::vector<T>& u,
+                      std::vector<T>& dudr,
+                      std::vector<T>& d2udr2,
+                      std::vector<T>& d3udr3) 
+  {
+    throw std::runtime_error("evaluate_batch not implemented for UserFunctor!");
+  }
   //  bool put(xmlNodePtr cur)
 
   bool put(xmlNodePtr cur) override

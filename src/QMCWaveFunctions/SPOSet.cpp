@@ -216,6 +216,32 @@ void SPOSetT<T>::mw_evaluate_notranspose(const RefVectorWithLeader<SPOSetT>& spo
     spo_list[iw].evaluate_notranspose(P_list[iw], first, last, logdet_list[iw], dlogdet_list[iw], d2logdet_list[iw]);
 }
 
+/*template<typename T>
+void SPOSetT<T>::mw_evaluateGradSource_batch(const RefVectorWithLeader<SPOSetT>& spo_list,
+                                     const RefVectorWithLeader<ParticleSet>& P_list,
+                                     int first,
+                                     int last,
+                                     const RefVectorWithLeader<ParticleSet>& source_list,
+                                     const std::vector<int>& iat_src_list,
+                                     RefVector<GradMatrix>& gradphi_list) const
+  {
+  throw std::runtime_error("Need specialization of SPOSet:::mw_evaluateGradSource_batch. \n");
+  }
+*/
+template<typename T>
+void SPOSetT<T>::mw_evaluateGradSource(const RefVectorWithLeader<SPOSetT>& spo_list,
+                                     const RefVectorWithLeader<ParticleSet>& P_list,
+                                     int first,
+                                     int last,
+                                     const RefVectorWithLeader<ParticleSet>& source_list,
+                                     int iat_src,
+                                     RefVector<GradMatrix>& gradphi_list) const
+  {
+    assert(this == &spo_list.getLeader());
+    for (int iw = 0; iw < spo_list.size(); iw++)
+      spo_list[iw].evaluateGradSource(P_list[iw], first, last, source_list[iw], iat_src, gradphi_list[iw].get());
+  }
+
 template<typename T>
 void SPOSetT<T>::evaluate_notranspose(const ParticleSet& P,
                                       int first,

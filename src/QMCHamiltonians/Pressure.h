@@ -52,6 +52,22 @@ struct Pressure : public OperatorBase
   std::string getClassName() const override { return "Pressure"; }
   void resetTargetParticleSet(ParticleSet& P) override { pNorm = 1.0 / (P.getLattice().DIM * P.getLattice().Volume); }
 
+  void mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                 const RefVectorWithLeader<ParticleSet>& p_list) override
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<Pressure&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                 const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                 const RefVectorWithLeader<ParticleSet>& p_list) const override
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<Pressure&>(static_cast<const Pressure&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
   inline Return_t evaluate(ParticleSet& P) override
   {
     value_ = 2.0 * P.PropertyList[WP::LOCALENERGY] - P.PropertyList[WP::LOCALPOTENTIAL];

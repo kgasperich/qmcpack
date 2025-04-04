@@ -313,7 +313,7 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateVGL(const RefVectorWithLeader<S
 
 template<class COT, typename ORBT>
 void SoaLocalizedBasisSet<COT, ORBT>::evaluateVGH(const ParticleSet& P, int iat, vgh_type& vgh)
-{
+{ 
   const auto& IonID(ions_.GroupID);
   const auto& coordR  = P.activeR(iat);
   const auto& d_table = P.getDistTableAB(myTableIndex);
@@ -525,6 +525,240 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateValue(const RefVectorWithLeader
   }
 }
 
+/*
+template<class COT, typename ORBT>
+void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateGradSourceV_batch(
+    const RefVectorWithLeader<SoaBasisSetBase<ORBT>>& basis_list,
+    const RefVectorWithLeader<ParticleSet>& P_list,
+    int iat,
+    const RefVectorWithLeader<ParticleSet>& ions_list,
+    const std::vector<int>& iat_src_list,
+    OffloadMWVGLArray& vgl_v)
+{
+  assert(this == &basis_list.getLeader());
+  auto& basis_leader = basis_list.template getCastedLeader<SoaLocalizedBasisSet<COT, ORBT>>();
+  const size_t nw = P_list.size();
+  assert(iat_src_list.size() == nw);
+  
+  // Check dimensions of vgl_v
+  assert(vgl_v.size(0) == 5);
+  assert(vgl_v.size(1) == nw);
+  assert(vgl_v.size(2) == BasisSetSize);
+  
+  // Zero out the gradients
+  for (size_t iw = 0; iw < nw; iw++)
+  {
+    for (int ib = 0; ib < BasisSetSize; ib++)
+    {
+      vgl_v(0, iw, ib) = 0; // Also zero out values
+      vgl_v(1, iw, ib) = 0; // x gradient
+      vgl_v(2, iw, ib) = 0; // y gradient
+      vgl_v(3, iw, ib) = 0; // z gradient
+      vgl_v(4, iw, ib) = 0; // laplacian
+    }
+  }
+  
+  const auto& IonID(ions_.GroupID);
+  auto& pset_leader = P_list.getLeader();
+  
+  // GPU arrays for displacements and Tv values
+  auto& Tv_list = basis_leader.mw_mem_handle_.getResource().Tv_list;
+  auto& displ_list_tr = basis_leader.mw_mem_handle_.getResource().displ_list_tr;
+  
+  Tv_list.resize(3ULL * nw);
+  displ_list_tr.resize(3ULL * nw);
+  
+  auto* Tv_host = Tv_list.data();
+  auto* displ_host = displ_list_tr.data();
+  
+  // Group centers by species for batching
+  const auto& species_names = ions_.getSpeciesSet().speciesName;
+  const int num_species = species_names.size();
+  
+  // This will store (walker_index, species_index, center_index, basis_offset) tuples
+  // for each walker's source ion
+  std::vector<std::vector<std::tuple<int, int, int>>> species_walker_map(num_species);
+  
+  // Fill displacement and Tv vectors for the specific ion for each walker
+  for (size_t iw = 0; iw < nw; iw++)
+  {
+    const auto& P = P_list[iw];
+    const auto& ions = ions_list[iw];
+    const int jion = iat_src_list[iw]; // The specific ion for this walker
+    
+    const auto& d_table = P.getDistTableAB(myTableIndex);
+    const auto& dist = (P.getActivePtcl() == iat) ? d_table.getTempDists() : d_table.getDistRow(iat);
+    const auto& displ = (P.getActivePtcl() == iat) ? d_table.getTempDispls() : d_table.getDisplRow(iat);
+    const auto& coordR = P.activeR(iat);
+    
+    // Fill Tv and displacement data for this walker's specific ion
+    for (int dim = 0; dim < 3; dim++)
+    {
+      size_t idx = dim + 3ULL * iw;
+      // Use iat for electron info but jion for the specific ion
+      RealType val = (ions.R[jion][dim] - coordR[dim]) - displ[jion][dim];
+      Tv_host[idx] = val;
+      displ_host[idx] = displ[jion][dim]; // Use displacement from electron to the specific ion
+    }
+    
+    // Determine species of this walker's ion and group for batching
+    int s_id = IonID[jion];
+    species_walker_map[s_id].push_back(std::make_tuple(iw, jion, BasisOffset[jion]));
+  }
+  
+  // Transfer data to device if needed
+#if defined(QMC_COMPLEX)
+  Tv_list.updateTo();
+#endif
+  displ_list_tr.updateTo();
+  
+  // Process each species
+  for (int s = 0; s < num_species; s++)
+  {
+    const auto& walker_ions = species_walker_map[s];
+    if (walker_ions.empty())
+      continue;
+      
+    // Create pinned vectors for this species
+    using PinnedVecSizeT = Vector<size_t, OffloadPinnedAllocator<size_t>>;
+    
+    // Create vectors for centers and offsets
+    PinnedVecSizeT c_list_s(walker_ions.size());
+    PinnedVecSizeT offs_list_s(walker_ions.size());
+    PinnedVecSizeT walker_list_s(walker_ions.size());
+    
+    // Fill pinned vectors with walker IDs, center IDs, and basis offsets
+    for (size_t i = 0; i < walker_ions.size(); i++)
+    {
+      const auto& [iw, jion, offset] = walker_ions[i];
+      walker_list_s[i] = iw;
+      c_list_s[i] = jion;
+      offs_list_s[i] = offset;
+    }
+    
+    c_list_s.updateTo();
+    offs_list_s.updateTo();
+    walker_list_s.updateTo();
+    
+    // Extract basis refs for this species
+    auto basis_refs = extractOneSpeciesBasisRefList(basis_list, s);
+    
+    // Call specialized batched function that processes specific ions for each walker
+    LOBasisSet[s]->mw_evaluateVGL_specific_ions(
+        basis_refs, 
+        pset_leader.getLattice(), 
+        vgl_v, 
+        displ_list_tr, 
+        Tv_list, 
+        walker_list_s,
+        nw, 
+        BasisSetSize, 
+        c_list_s, 
+        offs_list_s);
+  }
+}
+*/
+
+template<class COT, typename ORBT>
+void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateGradSourceV(
+    const RefVectorWithLeader<SoaBasisSetBase<ORBT>>& basis_list,
+    const RefVectorWithLeader<ParticleSet>& P_list,
+    int iat,
+    const RefVectorWithLeader<ParticleSet>& ions_list,
+    int jion,
+    OffloadMWVGLArray& vgl_v)
+{
+  assert(this == &basis_list.getLeader());
+  auto& basis_leader = basis_list.template getCastedLeader<SoaLocalizedBasisSet<COT, ORBT>>();
+  const size_t nw = P_list.size();
+  
+  // Check dimensions for gradient-only array
+  assert(vgl_v.size(0) == 3); // Just gradients (x,y,z)
+  assert(vgl_v.size(1) == nw);
+  assert(vgl_v.size(2) == BasisSetSize);
+  
+  // Zero out the gradient components
+  for (size_t iw = 0; iw < nw; iw++) {
+    for (int ib = 0; ib < BasisSetSize; ib++) {
+      vgl_v(0, iw, ib) = 0; // x gradient
+      vgl_v(1, iw, ib) = 0; // y gradient
+      vgl_v(2, iw, ib) = 0; // z gradient
+    }
+  }
+  
+  const auto& IonID(ions_.GroupID);
+  auto& pset_leader = P_list.getLeader();
+  
+  // GPU arrays for displacements and Tv values
+  auto& Tv_list = basis_leader.mw_mem_handle_.getResource().Tv_list;
+  auto& displ_list_tr = basis_leader.mw_mem_handle_.getResource().displ_list_tr;
+  Tv_list.resize(3ULL * nw);
+  displ_list_tr.resize(3ULL * nw);
+  
+  auto* Tv_host = Tv_list.data();
+  auto* displ_host = displ_list_tr.data();
+  
+  // Fill displacement and Tv vectors for each walker
+  for (size_t iw = 0; iw < nw; iw++) {
+    const auto& P = P_list[iw];
+    const auto& ions = ions_list[iw];
+    
+    const auto& d_table = P.getDistTableAB(myTableIndex);
+    const auto& dist = (P.getActivePtcl() == iat) ? d_table.getTempDists() : d_table.getDistRow(iat);
+    const auto& displ = (P.getActivePtcl() == iat) ? d_table.getTempDispls() : d_table.getDisplRow(iat);
+    const auto& coordR = P.activeR(iat);
+    
+    // Fill Tv and displacement data for this walker
+    for (int dim = 0; dim < 3; dim++) {
+      size_t idx = dim + 3ULL * iw;
+      RealType val = (ions.R[jion][dim] - coordR[dim]) - displ[jion][dim];
+      Tv_host[idx] = val;
+      displ_host[idx] = displ[jion][dim];
+    }
+  }
+  
+  // Transfer data to device if needed
+#if defined(QMC_COMPLEX)
+  Tv_list.updateTo();
+#endif
+  displ_list_tr.updateTo();
+  
+  // Get the species ID and basis offset for the ion
+  int s_id = IonID[jion];
+  size_t basis_offset = BasisOffset[jion];
+  
+  // Extract basis refs for this species
+  auto basis_refs = extractOneSpeciesBasisRefList(basis_list, s_id);
+  
+  // Create a temporary full VGL array
+  OffloadMWVGLArray temp_vgl;
+  temp_vgl.resize(5, nw, BasisSetSize);
+  
+  // Zero out the temporary array
+  for (size_t iw = 0; iw < nw; iw++) {
+    for (int ib = 0; ib < BasisSetSize; ib++) {
+      temp_vgl(0, iw, ib) = 0; // value
+      temp_vgl(1, iw, ib) = 0; // x gradient
+      temp_vgl(2, iw, ib) = 0; // y gradient
+      temp_vgl(3, iw, ib) = 0; // z gradient
+      temp_vgl(4, iw, ib) = 0; // laplacian
+    }
+  }
+  
+  // Call the mw_evaluateVGL function with the specific center and offset
+  LOBasisSet[s_id]->mw_evaluateVGL(basis_refs, pset_leader.getLattice(), temp_vgl,
+                                  displ_list_tr, Tv_list, nw, BasisSetSize,
+                                  jion, basis_offset, NumCenters);
+  
+  // Copy just the gradient components to the output array
+  for (size_t iw = 0; iw < nw; iw++) {
+    for (int ib = 0; ib < BasisSetSize; ib++) {
+      vgl_v(0, iw, ib) = temp_vgl(1, iw, ib); // x gradient
+      vgl_v(1, iw, ib) = temp_vgl(2, iw, ib); // y gradient
+      vgl_v(2, iw, ib) = temp_vgl(3, iw, ib); // z gradient
+    }
+  }
+}
 
 template<class COT, typename ORBT>
 void SoaLocalizedBasisSet<COT, ORBT>::evaluateGradSourceV(const ParticleSet& P,
@@ -638,6 +872,7 @@ void SoaLocalizedBasisSet<COT, ORBT>::evaluateGradSourceVGL(const ParticleSet& P
   Tv[1] = (ions_.R[jion][1] - coordR[1]) - displ[jion][1];
   Tv[2] = (ions_.R[jion][2] - coordR[2]) - displ[jion][2];
   LOBasisSet[IonID[jion]]->evaluateVGHGH(P.getLattice(), dist[jion], displ[jion], BasisOffset[jion], vghgh, Tv);
+
 }
 
 template<class COT, typename ORBT>

@@ -38,6 +38,24 @@ MomentumEstimator::MomentumEstimator(ParticleSet& elns, TrialWaveFunction& psi)
 
 void MomentumEstimator::resetTargetParticleSet(ParticleSet& P) {}
 
+
+void MomentumEstimator::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<MomentumEstimator&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void MomentumEstimator::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<MomentumEstimator&>(static_cast<const MomentumEstimator&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
+
 MomentumEstimator::Return_t MomentumEstimator::evaluate(ParticleSet& P)
 {
   const int np = P.getTotalNum();

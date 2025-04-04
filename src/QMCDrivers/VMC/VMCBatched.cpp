@@ -201,18 +201,45 @@ void VMCBatched::advanceWalkers(const StateForThread& sft,
 
   {
     ScopedTimer collectables_local_timer(timers.collectables_timer);
-    auto evaluateNonPhysicalHamiltonianElements = [](QMCHamiltonian& ham, ParticleSet& pset, MCPWalker& walker) {
-      ham.auxHevaluate(pset, walker);
-    };
-    for (int iw = 0; iw < crowd.size(); ++iw)
-      evaluateNonPhysicalHamiltonianElements(walker_hamiltonians[iw], walker_elecs[iw], walkers[iw]);
+    
+
+//    auto evaluateNonPhysicalHamiltonianElements = [](QMCHamiltonian& ham, ParticleSet& pset, MCPWalker& walker) {
+//      ham.auxHevaluate(pset, walker);
+//    };
+//    for (int iw = 0; iw < crowd.size(); ++iw)
+//      evaluateNonPhysicalHamiltonianElements(walker_hamiltonians[iw], walker_elecs[iw], walkers[iw]);
+
+//auto evaluateNonPhysicalHamiltonianElements =
+//  [](const RefVectorWithLeader<QMCHamiltonian>& ham_list,
+//     const RefVectorWithLeader<ParticleSet>& elec_list,
+//     const RefVectorWithLeader<MCPWalker>& walker_list)
+//{
+//	QMCHamiltonian::mw_auxHevaluate(ham_list, elec_list, walker_list);
+//
+//};
+//evaluateNonPhysicalHamiltonianElements(walker_hamiltonians, walker_elecs, walkers);
+
+  const RefVectorWithLeader<MCPWalker> walker_list(walkers[0], walkers);
+  
+  // Call the batched function using the lambda pattern shown in the example
+  auto evaluateNonPhysicalHamiltonianElementsBatch = 
+    [](const RefVectorWithLeader<QMCHamiltonian>& ham_list,
+       const RefVectorWithLeader<ParticleSet>& elec_list,
+       const RefVectorWithLeader<MCPWalker>& walker_list)
+  {
+    ham_list.getLeader().mw_auxHevaluate(ham_list, elec_list, walker_list);
+  };
+  
+  evaluateNonPhysicalHamiltonianElementsBatch(walker_hamiltonians, walker_elecs, walker_list);
+  
+
+  }
 
     auto savePropertiesIntoWalker = [](QMCHamiltonian& ham, MCPWalker& walker) {
       ham.saveProperty(walker.getPropertyBase());
     };
     for (int iw = 0; iw < crowd.size(); ++iw)
       savePropertiesIntoWalker(walker_hamiltonians[iw], walkers[iw]);
-  }
 
   if (accumulate_this_step)
   {

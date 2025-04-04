@@ -43,7 +43,8 @@ public:
   enum
   {
     DIM     = OHMMS_DIM,
-    DIM_VGL = OHMMS_DIM + 2 // Value(1) + Gradients(OHMMS_DIM) + Laplacian(1)
+    DIM_VGL = OHMMS_DIM + 2, // Value(1) + Gradients(OHMMS_DIM) + Laplacian(1)
+    DIM_GRAD= OHMMS_DIM      //Gradients(OHMMS_DIM)  
   };
   using ValueType         = T;
   using PosType           = QMCTraits::QTBase::PosType;
@@ -62,6 +63,7 @@ public:
   using GGGMatrix         = typename OrbitalSetTraits<ValueType>::GradHessMatrix;
   using SPOMap            = std::map<std::string, const std::unique_ptr<const SPOSetT>>;
   using OffloadMWVGLArray = Array<ValueType, 3, OffloadPinnedAllocator<ValueType>>; // [VGL, walker, Orbs]
+  using OffloadMWGradArray = Array<ValueType, 3, OffloadPinnedAllocator<ValueType>>; // [VGL, walker, Orbs]
   using OffloadMWVArray   = Array<ValueType, 2, OffloadPinnedAllocator<ValueType>>; // [walker, Orbs]
   template<typename DT>
   using OffloadMatrix = Matrix<DT, OffloadPinnedAllocator<DT>>;
@@ -450,6 +452,7 @@ public:
                                          ValueMatrix& d2logdet,
                                          ValueMatrix& dspinlogdet);
 
+
   virtual void mw_evaluate_notranspose(const RefVectorWithLeader<SPOSetT>& spo_list,
                                        const RefVectorWithLeader<ParticleSet>& P_list,
                                        int first,
@@ -458,6 +461,21 @@ public:
                                        const RefVector<GradMatrix>& dlogdet_list,
                                        const RefVector<ValueMatrix>& d2logdet_list) const;
 
+  virtual void mw_evaluateGradSource(const RefVectorWithLeader<SPOSetT>& spo_list,
+                                          const RefVectorWithLeader<ParticleSet>& P_list,
+                                          int first,
+                                          int last,
+                                          const RefVectorWithLeader<ParticleSet>& source_list,
+                                          int iat_src,
+                                          RefVector<GradMatrix>& gradphi_list) const ; 
+/*  virtual void mw_evaluateGradSource_batch(const RefVectorWithLeader<SPOSetT>& spo_list,
+                                          const RefVectorWithLeader<ParticleSet>& P_list,
+                                          int first,
+                                          int last,
+                                          const RefVectorWithLeader<ParticleSet>& source_list,
+                                          const std::vector<int>& iat_src_list,
+                                          RefVector<GradMatrix>& gradphi_list) const ; 
+					  */
   /** evaluate the values, gradients and hessians of this single-particle orbital for [first,last) particles
    * @param P current ParticleSet
    * @param first starting index of the particles

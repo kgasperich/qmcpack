@@ -31,6 +31,7 @@ struct LCAOrbitalSet::LCAOMultiWalkerMem : public Resource
   std::unique_ptr<Resource> makeClone() const override { return std::make_unique<LCAOMultiWalkerMem>(*this); }
 
   OffloadMWVGLArray phi_vgl_v;                           // [5][NW][NumMO]
+  OffloadMWGradArray phi_grad_v;    			 // 
   OffloadMWVGLArray basis_vgl_mw;                        // [5][NW][NumAO]
   OffloadMWVArray phi_v;                                 // [NW][NumMO]
   OffloadMWVArray basis_v_mw;                            // [NW][NumAO]
@@ -59,7 +60,8 @@ LCAOrbitalSet::LCAOrbitalSet(const std::string& my_name,
       Identity(identity),
       useOMPoffload_(use_offload),
       basis_timer_(createGlobalTimer("LCAOrbitalSet::Basis", timer_level_fine)),
-      mo_timer_(createGlobalTimer("LCAOrbitalSet::MO", timer_level_fine))
+      mo_timer_(createGlobalTimer("LCAOrbitalSet::MO", timer_level_fine)),
+      eval_notranspose_timer_(createGlobalTimer("LCAOrbitalSet::evaluate_notranspose AAA", timer_level_fine))
 {
   if (!bs)
     throw std::runtime_error("LCAOrbitalSet cannot take nullptr as its  basis set!");
@@ -88,7 +90,8 @@ LCAOrbitalSet::LCAOrbitalSet(const LCAOrbitalSet& in)
       Identity(in.Identity),
       useOMPoffload_(in.useOMPoffload_),
       basis_timer_(in.basis_timer_),
-      mo_timer_(in.mo_timer_)
+      mo_timer_(in.mo_timer_),
+      eval_notranspose_timer_(in.eval_notranspose_timer_)
 {
   Temp.resize(BasisSetSize);
   Temph.resize(BasisSetSize);
@@ -199,6 +202,8 @@ inline void Product_ABt(const VectorSoaContainer<T, D>& A, const Matrix<T, Alloc
   BLAS::gemm(transa, transb, B.rows(), D, B.cols(), zone, B.data(), B.cols(), A.data(), A.capacity(), zero, C.data(),
              C.capacity());
 }
+
+
 
 inline void LCAOrbitalSet::evaluate_vgl_impl(const vgl_type& temp,
                                              ValueVector& psi,
@@ -957,7 +962,6 @@ inline void LCAOrbitalSet::evaluate_ionderiv_v_impl(const vgl_type& temp, int i,
   const ValueType* restrict gx = temp.data(1);
   const ValueType* restrict gy = temp.data(2);
   const ValueType* restrict gz = temp.data(3);
-
   for (size_t j = 0; j < output_size; j++)
   {
     //As mentioned in SoaLocalizedBasisSet, LCAO's have a nice property that
@@ -1018,6 +1022,107 @@ inline void LCAOrbitalSet::evaluate_ionderiv_vgl_impl(const vghgh_type& temp,
   }
 }
 
+void LCAOrbitalSet::mw_evaluate_notranspose(const RefVectorWithLeader<SPOSetT>& spo_list,
+                                          const RefVectorWithLeader<ParticleSet>& P_list,
+                                          int first,
+                                          int last,
+                                          const RefVector<ValueMatrix>& logdet_list,
+                                          const RefVector<GradMatrix>& dlogdet_list,
+                                          const RefVector<ValueMatrix>& d2logdet_list) const {
+  assert(this == &spo_list.getLeader());
+  
+  // Get leader and sizes
+  auto& spo_leader = spo_list.getCastedLeader<LCAOrbitalSet>();
+  const int nw = spo_list.size();
+  
+  // Create a basis list for the batched VGL evaluation
+  RefVectorWithLeader<SoaBasisSetBase<ValueType>> basis_list(*spo_leader.myBasisSet);
+  for (int iw = 1; iw < nw; ++iw) {
+    const LCAOrbitalSet& orb = static_cast<const LCAOrbitalSet&>(spo_list[iw]);
+    basis_list.push_back(*orb.myBasisSet);
+  }
+  
+  // Use phi_vgl_v from memory resource
+  auto& phi_vgl_v = spo_leader.mw_mem_handle_.getResource().phi_vgl_v;
+  phi_vgl_v.resize(DIM_VGL, nw, spo_leader.BasisSetSize);
+  
+  if (spo_leader.Identity) {
+    // Loop over particle indices
+    for (size_t i = 0, iat = first; iat < last; i++, iat++) {
+      // Batched evaluate VGL
+      spo_leader.myBasisSet->mw_evaluateVGL(basis_list, P_list, iat, phi_vgl_v);
+      
+      // Transfer results back to host if using offload
+      if (useOMPoffload_)
+        phi_vgl_v.updateFrom();
+      
+      // Batched implementation of evaluate_vgl_impl
+      for (int iw = 0; iw < nw; iw++) {
+        const size_t output_size = logdet_list[iw].get().cols();
+        
+        // Copy values directly
+        std::copy_n(phi_vgl_v.data_at(0, iw, 0), output_size, logdet_list[iw].get()[i]);
+        std::copy_n(phi_vgl_v.data_at(4, iw, 0), output_size, d2logdet_list[iw].get()[i]);
+        
+        // Copy gradients - handle dimensionality differences
+        for (size_t j = 0; j < output_size; j++) {
+          dlogdet_list[iw].get()[i][j][0] = phi_vgl_v(1, iw, j); // x component
+          dlogdet_list[iw].get()[i][j][1] = phi_vgl_v(2, iw, j); // y component
+          dlogdet_list[iw].get()[i][j][2] = phi_vgl_v(3, iw, j); // z component
+        }
+      }
+    }
+  } else {
+    // For non-identity case, we'll process walker by walker to be safe
+    for (size_t i = 0, iat = first; iat < last; i++, iat++) {
+      // Batched evaluate VGL
+      spo_leader.myBasisSet->mw_evaluateVGL(basis_list, P_list, iat, phi_vgl_v);
+      
+      // Transfer results back to host if using offload
+      if (useOMPoffload_)
+        phi_vgl_v.updateFrom();
+      
+      // Process each walker
+      for (int iw = 0; iw < nw; iw++) {
+        const LCAOrbitalSet& orb = static_cast<const LCAOrbitalSet&>(spo_list[iw]);
+        
+        // Get temporary vector for this walker
+        vgl_type& Temp = const_cast<LCAOrbitalSet&>(orb).Temp;
+        vgl_type& Tempv = const_cast<LCAOrbitalSet&>(orb).Tempv;
+        
+        // Copy data from batched array
+        for (int d = 0; d < 5; d++) {
+          for (int j = 0; j < orb.BasisSetSize; j++) {
+            Temp.data(d)[j] = phi_vgl_v(d, iw, j);
+          }
+        }
+        
+        // Create partial view of C matrix
+        ValueMatrix C_partial_view(orb.C->data(), logdet_list[iw].get().cols(), orb.BasisSetSize);
+        
+        // Use the original Product_ABt that we know works
+        Product_ABt(Temp, C_partial_view, Tempv);
+        
+        // Inline of evaluate_vgl_impl instead of calling it
+        const size_t output_size = logdet_list[iw].get().cols();
+        
+        // Copy values directly
+        std::copy_n(Tempv.data(0), output_size, logdet_list[iw].get()[i]);
+        std::copy_n(Tempv.data(4), output_size, d2logdet_list[iw].get()[i]);
+        
+        // Copy gradients
+        const ValueType* restrict gx = Tempv.data(1);
+        const ValueType* restrict gy = Tempv.data(2);
+        const ValueType* restrict gz = Tempv.data(3);
+        for (size_t j = 0; j < output_size; j++) {
+          dlogdet_list[iw].get()[i][j][0] = gx[j];
+          dlogdet_list[iw].get()[i][j][1] = gy[j];
+          dlogdet_list[iw].get()[i][j][2] = gz[j];
+        }
+      }
+    }
+  }
+}
 void LCAOrbitalSet::evaluate_notranspose(const ParticleSet& P,
                                          int first,
                                          int last,
@@ -1025,6 +1130,8 @@ void LCAOrbitalSet::evaluate_notranspose(const ParticleSet& P,
                                          GradMatrix& dlogdet,
                                          ValueMatrix& d2logdet)
 {
+
+  ScopedTimer local(eval_notranspose_timer_);
   if (Identity)
   {
     for (size_t i = 0, iat = first; iat < last; i++, iat++)
@@ -1103,6 +1210,172 @@ void LCAOrbitalSet::evaluate_notranspose(const ParticleSet& P,
   }
 }
 
+
+void LCAOrbitalSet::mw_evaluateGradSource(const RefVectorWithLeader<SPOSetT>& spo_list,
+                                          const RefVectorWithLeader<ParticleSet>& P_list,
+                                          int first,
+                                          int last,
+                                          const RefVectorWithLeader<ParticleSet>& source_list,
+                                          int iat_src,
+                                          RefVector<GradMatrix>& gradphi_list) const 
+{
+  assert(this == &spo_list.getLeader());
+  
+  // Get leader and sizes
+  auto& spo_leader = spo_list.getCastedLeader<LCAOrbitalSet>();
+  const int nw = spo_list.size();
+  
+  // Create basis list for batched evaluation
+  RefVectorWithLeader<SoaBasisSetBase<ValueType>> basis_list(*spo_leader.myBasisSet);
+  for (int iw = 1; iw < nw; ++iw) {
+    const LCAOrbitalSet& orb = static_cast<const LCAOrbitalSet&>(spo_list[iw]);
+    basis_list.push_back(*orb.myBasisSet);
+  }
+
+  // Use pre-allocated memory resource
+  auto& phi_grad_v = spo_leader.mw_mem_handle_.getResource().phi_grad_v;
+  phi_grad_v.resize(DIM_GRAD, nw, spo_leader.BasisSetSize);
+
+  if (spo_leader.Identity) {
+    for (size_t i = 0, iat = first; iat < last; i++, iat++) {
+     // Batched grad source evaluation
+      spo_leader.myBasisSet->mw_evaluateGradSourceV(basis_list, P_list, iat, source_list, iat_src, phi_grad_v);
+      
+      if (useOMPoffload_)
+        phi_grad_v.updateFrom();
+
+      // Direct copy for identity case
+      for (int iw = 0; iw < nw; iw++) {
+        const size_t output_size = gradphi_list[iw].get().cols();
+        for (size_t j = 0; j < output_size; j++) {
+          gradphi_list[iw].get()[i][j][0] = phi_grad_v(0, iw, j);  // x
+          gradphi_list[iw].get()[i][j][1] = phi_grad_v(1, iw, j);  // y
+          gradphi_list[iw].get()[i][j][2] = phi_grad_v(2, iw, j);  // z
+        }
+      }
+    }
+  } else {
+    for (size_t i = 0, iat = first; iat < last; i++, iat++) {
+      spo_leader.myBasisSet->mw_evaluateGradSourceV(basis_list, P_list, iat, source_list, iat_src, phi_grad_v);
+      
+      if (useOMPoffload_)
+        phi_grad_v.updateFrom();
+
+      for (int iw = 0; iw < nw; iw++) {
+        const LCAOrbitalSet& orb = static_cast<const LCAOrbitalSet&>(spo_list[iw]);
+        ValueMatrix C_partial_view(orb.C->data(), gradphi_list[iw].get().cols(), orb.BasisSetSize);
+        
+        // Use temporary storage
+        vgl_type& Temp = const_cast<LCAOrbitalSet&>(orb).Temp;
+        vgl_type& Tempv = const_cast<LCAOrbitalSet&>(orb).Tempv;
+
+        // Copy batched data to walker-specific temp
+        for (int d = 0; d < 3; d++)  // Only grad components
+          std::copy_n(phi_grad_v.data_at(d, iw, 0), orb.BasisSetSize, Temp.data(d));
+
+        // Matrix multiply
+        Product_ABt(Temp, C_partial_view, Tempv);
+
+        // Copy transformed values
+        const size_t output_size = gradphi_list[iw].get().cols();
+        const ValueType* gx = Tempv.data(0);
+        const ValueType* gy = Tempv.data(1);
+        const ValueType* gz = Tempv.data(2);
+        for (size_t j = 0; j < output_size; j++) {
+          gradphi_list[iw].get()[i][j][0] = gx[j];
+          gradphi_list[iw].get()[i][j][1] = gy[j];
+          gradphi_list[iw].get()[i][j][2] = gz[j];
+        }
+      }
+    }
+  }
+}
+
+
+/*void LCAOrbitalSet::mw_evaluateGradSource_Batch(const RefVectorWithLeader<SPOSetT>& spo_list,
+                                          const RefVectorWithLeader<ParticleSet>& P_list,
+                                          int first,
+                                          int last,
+                                          const RefVectorWithLeader<ParticleSet>& source_list,
+                                          const std::vector<int>& iat_src_list,
+                                          RefVector<GradMatrix>& gradphi_list) const
+{
+  assert(this == &spo_list.getLeader());
+  // Get leader and sizes
+  auto& spo_leader = spo_list.getCastedLeader<LCAOrbitalSet>();
+  const int nw = spo_list.size();
+
+  // Ensure we have an ion index for each walker
+  assert(iat_src_list.size() == nw);
+
+  // Create basis list for batched evaluation
+  RefVectorWithLeader<SoaBasisSetBase<ValueType>> basis_list(*spo_leader.myBasisSet);
+  for (int iw = 1; iw < nw; ++iw) {
+    const LCAOrbitalSet& orb = static_cast<const LCAOrbitalSet&>(spo_list[iw]);
+    basis_list.push_back(*orb.myBasisSet);
+  }
+
+  // Use pre-allocated memory resource
+  auto& phi_grad_v = spo_leader.mw_mem_handle_.getResource().phi_grad_v;
+  phi_grad_v.resize(DIM_GRAD, nw, spo_leader.BasisSetSize);
+
+  if (spo_leader.Identity) {
+    for (size_t i = 0, iat = first; iat < last; i++, iat++) {
+      // Batched grad source evaluation with per-walker ion indices
+      //spo_leader.myBasisSet->mw_evaluateGradSourceV_batch(basis_list, P_list, iat, source_list, iat_src_list, phi_grad_v);
+
+      if (useOMPoffload_)
+        phi_grad_v.updateFrom();
+
+      // Direct copy for identity case
+      for (int iw = 0; iw < nw; iw++) {
+        const size_t output_size = gradphi_list[iw].get().cols();
+        for (size_t j = 0; j < output_size; j++) {
+          gradphi_list[iw].get()[i][j][0] = phi_grad_v(0, iw, j);  // x
+          gradphi_list[iw].get()[i][j][1] = phi_grad_v(1, iw, j);  // y
+          gradphi_list[iw].get()[i][j][2] = phi_grad_v(2, iw, j);  // z
+        }
+      }
+    }
+  } else {
+    for (size_t i = 0, iat = first; iat < last; i++, iat++) {
+      // Batched grad source evaluation with per-walker ion indices
+      //spo_leader.myBasisSet->mw_evaluateGradSourceV_batch(basis_list, P_list, iat, source_list, iat_src_list, phi_grad_v);
+
+      if (useOMPoffload_)
+        phi_grad_v.updateFrom();
+
+      for (int iw = 0; iw < nw; iw++) {
+        const LCAOrbitalSet& orb = static_cast<const LCAOrbitalSet&>(spo_list[iw]);
+        ValueMatrix C_partial_view(orb.C->data(), gradphi_list[iw].get().cols(), orb.BasisSetSize);
+
+        // Use temporary storage
+        vgl_type& Temp = const_cast<LCAOrbitalSet&>(orb).Temp;
+        vgl_type& Tempv = const_cast<LCAOrbitalSet&>(orb).Tempv;
+
+        // Copy batched data to walker-specific temp
+        for (int d = 0; d < 3; d++)  // Only grad components
+          std::copy_n(phi_grad_v.data_at(d, iw, 0), orb.BasisSetSize, Temp.data(d));
+
+        // Matrix multiply
+        Product_ABt(Temp, C_partial_view, Tempv);
+
+        // Copy transformed values
+        const size_t output_size = gradphi_list[iw].get().cols();
+        const ValueType* gx = Tempv.data(0);
+        const ValueType* gy = Tempv.data(1);
+        const ValueType* gz = Tempv.data(2);
+
+        for (size_t j = 0; j < output_size; j++) {
+          gradphi_list[iw].get()[i][j][0] = gx[j];
+          gradphi_list[iw].get()[i][j][1] = gy[j];
+          gradphi_list[iw].get()[i][j][2] = gz[j];
+        }
+      }
+    }
+  }
+}
+*/
 void LCAOrbitalSet::evaluateGradSource(const ParticleSet& P,
                                        int first,
                                        int last,

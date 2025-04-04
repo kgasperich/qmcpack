@@ -104,6 +104,12 @@ void NonLocalECPotential::deleteParticleQuantities()
   }
 }
 #endif
+void NonLocalECPotential::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                                      const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<NonLocalECPotential&>(op_list[iw]).evaluate(p_list[iw]);
+}
 
 NonLocalECPotential::Return_t NonLocalECPotential::evaluate(ParticleSet& P)
 {
@@ -425,6 +431,21 @@ void NonLocalECPotential::mw_evaluateImpl(const RefVectorWithLeader<OperatorBase
   }
 }
 
+void NonLocalECPotential::mw_evaluateIonDerivs(const RefVectorWithLeader<OperatorBase>& op_list,
+                                               const RefVectorWithLeader<ParticleSet>& p_list,
+                                               const RefVectorWithLeader<ParticleSet>& ion_list,
+                                               const RefVectorWithLeader<TrialWaveFunction>& psi_list,
+                                               std::vector<ParticleSet::ParticlePos>& hf_terms,
+                                               std::vector<ParticleSet::ParticlePos>& pulay_terms) const
+{
+  const int nw = op_list.size();
+  for (int iw = 0; iw < nw; ++iw)
+  {
+    NonLocalECPotential& ham = static_cast<NonLocalECPotential&>(op_list[iw]);
+    ham.evaluateIonDerivs(p_list[iw], ion_list[iw], psi_list[iw], hf_terms[iw], pulay_terms[iw]);
+  }
+}
+
 void NonLocalECPotential::evaluateIonDerivs(ParticleSet& P,
                                             ParticleSet& ions,
                                             TrialWaveFunction& psi,
@@ -479,6 +500,18 @@ void NonLocalECPotential::computeOneElectronTxy(ParticleSet& P, const int ref_el
     PP[iat]->evaluateOne(P, iat, Psi, ref_elec, dist[iat], -displ[iat], tmove_xy, use_DLA);
 }
 
+void NonLocalECPotential::mw_evaluateOneBodyOpMatrix(const RefVectorWithLeader<OperatorBase>& op_list,
+                                                     const RefVectorWithLeader<ParticleSet>& p_list,
+                                                     const RefVectorWithLeader<TWFFastDerivWrapper>& psi_list,
+                                                     std::vector<std::vector<ValueMatrix>>& B_list)
+{
+  const int nw = op_list.size();
+  for (int iw = 0; iw < nw; ++iw)
+  {
+    op_list[iw].evaluateOneBodyOpMatrix(p_list[iw], psi_list[iw], B_list[iw]);
+  }
+}
+
 void NonLocalECPotential::evaluateOneBodyOpMatrix(ParticleSet& P,
                                                   const TWFFastDerivWrapper& psi,
                                                   std::vector<ValueMatrix>& B)
@@ -514,6 +547,94 @@ void NonLocalECPotential::evaluateOneBodyOpMatrix(ParticleSet& P,
     }
   }
 }
+
+void NonLocalECPotential::mw_evaluateOneBodyOpMatrixForceDeriv(
+    const RefVectorWithLeader<OperatorBase>& ham_list,
+    const RefVectorWithLeader<ParticleSet>& P_list,
+    const RefVectorWithLeader<ParticleSet>& source_list,
+    const RefVectorWithLeader<TWFFastDerivWrapper>& psi_list,
+    const int iat,
+    std::vector<std::vector<std::vector<ValueMatrix>>>& Bforce_list) const
+{
+  const int nw = ham_list.size();
+  if (nw == 0)
+    return;
+
+  // Process each walker sequentially to avoid thread safety issues
+  for (int iw = 0; iw < nw; ++iw)
+  {
+    NonLocalECPotential& ham = static_cast<NonLocalECPotential&>(ham_list[iw]);
+    ParticleSet& P           = P_list[iw];
+    ParticleSet& source      = source_list[iw];
+    TWFFastDerivWrapper& psi = psi_list[iw];
+
+    // Call the single-walker implementation
+    ham.evaluateOneBodyOpMatrixForceDeriv(P, source, psi, iat, Bforce_list[iw]);
+  }
+}
+/*{
+  const int nw = ham_list.size();
+  if (nw == 0) return;
+  
+  // Whether to keep or regenerate the quadrature grid
+  bool keepGrid = true;
+  
+  // Pre-loop setup phase - can be done in parallel for each walker
+  #pragma omp parallel for
+  for (int iw = 0; iw < nw; ++iw)
+  {
+    NonLocalECPotential& nlpp = static_cast<NonLocalECPotential&>(ham_list[iw]);
+    
+    // Rotate quadrature grid if needed
+    for (int ipp = 0; ipp < nlpp.PPset.size(); ipp++)
+      if (nlpp.PPset[ipp] && !keepGrid)
+        nlpp.PPset[ipp]->rotateQuadratureGrid(generateRandomRotationMatrix(*nlpp.myRNG));
+    
+    // Clear all electron and ion neighbor lists
+    for (int iat = 0; iat < nlpp.NumIons; iat++)
+      nlpp.IonNeighborElecs.getNeighborList(iat).clear();
+    
+    for (int jel = 0; jel < P_list[iw].getTotalNum(); jel++)
+      nlpp.ElecNeighborIons.getNeighborList(jel).clear();
+  }
+  
+  // Main processing loop - process each walker
+  for (int iw = 0; iw < nw; ++iw)
+  {
+    NonLocalECPotential& nlpp = static_cast<NonLocalECPotential&>(ham_list[iw]);
+    ParticleSet& P = P_list[iw];
+    ParticleSet& source = source_list[iw];
+    TWFFastDerivWrapper& psi = psi_list[iw];
+    
+    const auto& myTable = P.getDistTableAB(nlpp.myTableIndex);
+    
+    // Loop over all electrons by group
+    for (int ig = 0; ig < P.groups(); ++ig)
+    {
+      for (int jel = P.first(ig); jel < P.last(ig); ++jel)
+      {
+        const auto& dist = myTable.getDistRow(jel);
+        const auto& displ = myTable.getDisplRow(jel);
+        auto& NeighborIons = nlpp.ElecNeighborIons.getNeighborList(jel);
+        
+        // Find all ions within cutoff range
+        for (int iat = 0; iat < nlpp.NumIons; iat++)
+        {
+          if (nlpp.PP[iat] != nullptr && dist[iat] < nlpp.PP[iat]->getRmax())
+          {
+            // Process contributions for this electron-ion pair
+            nlpp.PP[iat]->evaluateOneBodyOpMatrixdRContribution(
+                P, source, iat, iat, psi, jel, dist[iat], -displ[iat], Bforce_list[iw]);
+            
+            // Update neighbor lists
+            NeighborIons.push_back(iat);
+            nlpp.IonNeighborElecs.getNeighborList(iat).push_back(jel);
+          }
+        }
+      }
+    }
+  }
+}*/
 
 void NonLocalECPotential::evaluateOneBodyOpMatrixForceDeriv(ParticleSet& P,
                                                             ParticleSet& source,

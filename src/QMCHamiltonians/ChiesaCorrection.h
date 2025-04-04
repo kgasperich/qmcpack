@@ -29,6 +29,13 @@ public:
   void resetTargetParticleSet(ParticleSet& P) override;
 
   Return_t evaluate(ParticleSet& P) override;
+  void mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                 const RefVectorWithLeader<ParticleSet>& p_list) override;
+
+void mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                 const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                 const RefVectorWithLeader<ParticleSet>& p_list) const override;
+
 
   bool put(xmlNodePtr cur) override;
 

@@ -73,6 +73,10 @@ public:
   /** Evaluate **/
   Return_t evaluate(ParticleSet& P) final;
 
+
+  void mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                 const RefVectorWithLeader<ParticleSet>& p_list) override;
+
 private:
   ///Finite difference timestep
   RealType delta_;

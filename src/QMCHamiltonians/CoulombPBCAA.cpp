@@ -214,6 +214,14 @@ CoulombPBCAA::Return_t CoulombPBCAA::evaluate(ParticleSet& P)
   return value_;
 }
 
+void CoulombPBCAA::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                               const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<CoulombPBCAA&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+
 void CoulombPBCAA::mw_evaluate(const RefVectorWithLeader<OperatorBase>& o_list,
                                const RefVectorWithLeader<TrialWaveFunction>& wf_list,
                                const RefVectorWithLeader<ParticleSet>& p_list) const

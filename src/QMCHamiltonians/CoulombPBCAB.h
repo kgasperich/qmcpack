@@ -142,6 +142,13 @@ public:
 
 
   Return_t evaluate(ParticleSet& P) override;
+  void mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                 const RefVectorWithLeader<ParticleSet>& p_list) override;
+
+  void mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                 const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                 const RefVectorWithLeader<ParticleSet>& p_list) const override;
+
 
   /** Evaluate the contribution of this component of multiple walkers per particle reporting
    *  to registered listeners from Estimators.

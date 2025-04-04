@@ -622,6 +622,248 @@ public:
       }
     }
   }
+  /*
+  virtual void mw_evalGradSource(const RefVectorWithLeader<WaveFunctionComponent>& wfc_list,
+                              const RefVectorWithLeader<ParticleSet>& p_list,
+                              const RefVectorWithLeader<ParticleSet>& source_list,
+                              int isrc,
+                              std::vector<ParticleSet::ParticleGradient>& grad_now) override
+{
+  const int nw = wfc_list.size();
+  if (nw == 0)
+    return;
+
+  // Get leader
+  const J1OrbitalSoA& j1_leader = static_cast<const J1OrbitalSoA&>(wfc_list.getLeader());
+  const int Nelec = j1_leader.Nelec;
+  const int myTableID = j1_leader.myTableID;
+
+  // Process each electron
+  for (int iat = 0; iat < Nelec; ++iat)
+  {
+    // Process all walkers grouped by group ID
+    std::map<int, std::vector<int>> group_walkers;
+
+    // Collect distance and displacement data for all walkers
+    for (int iw = 0; iw < nw; ++iw)
+    {
+      const J1OrbitalSoA& j1 = static_cast<const J1OrbitalSoA&>(wfc_list[iw]);
+
+      // Get group ID for this walker's source
+      int gid = source_list[iw].getGroupID(isrc);
+
+      // Only include if this walker has a functor for this group
+      if (j1.J1UniqueFunctors[gid] != nullptr)
+      {
+        group_walkers[gid].push_back(iw);
+      }
+    }
+
+    // Process each group
+    for (const auto& pair : group_walkers)
+    {
+      int gid = pair.first;
+      const std::vector<int>& walker_indices = pair.second;
+
+      if (walker_indices.empty())
+        continue;
+
+      // Extract data for this group's walkers
+      std::vector<RealType> r_values(walker_indices.size());
+      std::vector<PosType> dr_values(walker_indices.size());
+      std::vector<RealType> dU_values(walker_indices.size());
+      std::vector<RealType> d2U_values(walker_indices.size()); // Not used but needed for function call
+      std::vector<RealType> d3U_values(walker_indices.size()); // Not used but needed for function call
+
+      // Fill arrays with data
+      for (size_t i = 0; i < walker_indices.size(); ++i)
+      {
+        int iw = walker_indices[i];
+        const auto& d_ie = p_list[iw].getDistTableAB(myTableID);
+        const auto& dist = d_ie.getDistRow(iat);
+        const auto& displ = d_ie.getDisplRow(iat);
+
+        r_values[i] = dist[isrc];
+        dr_values[i] = displ[isrc];
+      }
+
+      // Batch evaluate functors
+      for (size_t i = 0; i < walker_indices.size(); ++i)
+      {
+        int iw = walker_indices[i];
+        const J1OrbitalSoA& j1 = static_cast<const J1OrbitalSoA&>(wfc_list[iw]);
+        RealType& r = r_values[i];
+        RealType& dU = dU_values[i];
+        RealType& d2U = d2U_values[i];
+        RealType& d3U = d3U_values[i];
+
+        // Evaluate functor - it handles cutoff internally
+        const_cast<J1OrbitalSoA&>(j1).U[isrc] = j1.J1UniqueFunctors[gid]->evaluate(r, dU, d2U, d3U);
+      }
+
+      // Compute gradient contributions
+      for (size_t i = 0; i < walker_indices.size(); ++i)
+      {
+        int iw = walker_indices[i];
+        const RealType r = r_values[i];
+        const RealType rinv = 1.0 / r;
+        const PosType& dr = dr_values[i];
+        const RealType& dU = dU_values[i];
+
+        // Accumulate gradient (dU will be 0 if r >= cutoff from the evaluate call)
+        grad_now[iw][isrc] -= dU * rinv * dr;
+      }
+    }
+  }
+}
+*/
+
+
+
+
+
+
+
+
+virtual void mw_evalGradSource(const RefVectorWithLeader<WaveFunctionComponent>& wfc_list,
+                              const RefVectorWithLeader<ParticleSet>& p_list,
+                              const RefVectorWithLeader<ParticleSet>& source_list,
+                              int isrc,
+                              std::vector<ParticleSet::ParticleGradient>& grad_now) override
+{
+  const int nw = wfc_list.size();
+  if (nw == 0)
+    return;
+  
+  // Get leader
+  const J1OrbitalSoA& j1_leader = static_cast<const J1OrbitalSoA&>(wfc_list.getLeader());
+  const int Nelec = j1_leader.Nelec;
+  const int myTableID = j1_leader.myTableID;
+  
+  // Process each electron
+  for (int iat = 0; iat < Nelec; ++iat)
+  {
+    // Process all walkers grouped by group ID
+    std::map<int, std::vector<int>> group_walkers;
+    
+    // Collect distance and displacement data for all walkers
+    for (int iw = 0; iw < nw; ++iw)
+    {
+      const J1OrbitalSoA& j1 = static_cast<const J1OrbitalSoA&>(wfc_list[iw]);
+      
+      // Get group ID for this walker's source
+      int gid = source_list[iw].getGroupID(isrc);
+      
+      // Only include if this walker has a functor for this group
+      if (j1.J1UniqueFunctors[gid] != nullptr)
+      {
+        group_walkers[gid].push_back(iw);
+      }
+    }
+    
+    // Process each group
+    for (const auto& pair : group_walkers)
+    {
+      int gid = pair.first;
+      const std::vector<int>& walker_indices = pair.second;
+      
+      if (walker_indices.empty())
+        continue;
+        
+      // Extract data for this group's walkers
+      std::vector<RealType> r_values(walker_indices.size());
+      std::vector<PosType> dr_values(walker_indices.size());
+      std::vector<RealType> dU_values(walker_indices.size());
+      
+      // Fill arrays with data
+      for (size_t i = 0; i < walker_indices.size(); ++i)
+      {
+        int iw = walker_indices[i];
+        const auto& d_ie = p_list[iw].getDistTableAB(myTableID);
+        const auto& dist = d_ie.getDistRow(iat);
+        const auto& displ = d_ie.getDisplRow(iat);
+        
+        r_values[i] = dist[isrc];
+        dr_values[i] = displ[isrc];
+      }
+      
+      // Check if all walkers in this group use the same functor instance
+      // This is an optimization to avoid repeatedly calling the functor for each walker
+      bool same_functor = true;
+      auto* first_functor = static_cast<const J1OrbitalSoA&>(wfc_list[walker_indices[0]]).J1UniqueFunctors[gid].get();
+      
+      for (size_t i = 1; i < walker_indices.size(); ++i)
+      {
+        int iw = walker_indices[i];
+        auto* current_functor = static_cast<const J1OrbitalSoA&>(wfc_list[iw]).J1UniqueFunctors[gid].get();
+        if (current_functor != first_functor)
+        {
+          same_functor = false;
+          break;
+        }
+      }
+      
+      if (same_functor && walker_indices.size() > 1)
+      {
+        // Batch evaluation for walkers with the same functor
+        std::vector<RealType> batch_u(walker_indices.size());
+        std::vector<RealType> batch_dudr(walker_indices.size());
+        std::vector<RealType> batch_d2udr2(walker_indices.size());
+        std::vector<RealType> batch_d3udr3(walker_indices.size());
+        
+        // Call the batch evaluate method
+        first_functor->evaluate_batch(r_values, batch_u, batch_dudr, batch_d2udr2, batch_d3udr3);
+        
+        // Store results
+        for (size_t i = 0; i < walker_indices.size(); ++i)
+        {
+          int iw = walker_indices[i];
+          const J1OrbitalSoA& j1 = static_cast<const J1OrbitalSoA&>(wfc_list[iw]);
+          
+          dU_values[i] = batch_dudr[i];
+          const_cast<J1OrbitalSoA&>(j1).U[isrc] = batch_u[i];
+        }
+      }
+      else
+      {
+        // Individual evaluation for each walker
+        for (size_t i = 0; i < walker_indices.size(); ++i)
+        {
+          int iw = walker_indices[i];
+          const J1OrbitalSoA& j1 = static_cast<const J1OrbitalSoA&>(wfc_list[iw]);
+          RealType r = r_values[i];
+          
+          // Evaluate the functor directly
+          RealType& dU = dU_values[i];
+          RealType d2U, d3U;
+          RealType U_val = j1.J1UniqueFunctors[gid]->evaluate(r, dU, d2U, d3U);
+          
+          // Store U value
+          const_cast<J1OrbitalSoA&>(j1).U[isrc] = U_val;
+        }
+      }
+      
+      // Compute gradient contributions
+      for (size_t i = 0; i < walker_indices.size(); ++i)
+      {
+        int iw = walker_indices[i];
+        const RealType r = r_values[i];
+        const RealType rinv = 1.0 / r;
+        const PosType& dr = dr_values[i];
+        const RealType& dU = dU_values[i];
+        
+        // Accumulate gradient
+        grad_now[iw][isrc] -= dU * rinv * dr;
+      }
+    }
+  }
+}
+
+
+
+
+
+
 
   inline GradType evalGradSource(ParticleSet& P, ParticleSet& source, int isrc) override
   {

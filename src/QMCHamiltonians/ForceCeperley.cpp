@@ -79,6 +79,23 @@ void ForceCeperley::InitMatrix()
   MatrixOperators::product(Sinv, h, c);
 }
 
+void ForceCeperley::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<ForceCeperley&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void ForceCeperley::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<ForceCeperley&>(static_cast<const ForceCeperley&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
+
 ForceCeperley::Return_t ForceCeperley::evaluate(ParticleSet& P)
 {
   if (add_ion_ion_ == true)

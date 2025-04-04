@@ -242,7 +242,14 @@ struct ShortRangeCuspFunctor : public OptimizableFunctorBase
       }
     }
   }
-
+inline void evaluate_batch(const std::vector<T>& r,
+                      std::vector<T>& u,
+                      std::vector<T>& dudr,
+                      std::vector<T>& d2udr2,
+                      std::vector<T>& d3udr3) 
+  {
+    throw std::runtime_error("evaluate_batch not implemented for ShortRangeCuspFuncto!");
+  }
   ///compute U(r), dU/dr, and d^2U/dr^2 at multiple values of r
   inline void evaluateVGL(const int iat,
                           const int iStart,

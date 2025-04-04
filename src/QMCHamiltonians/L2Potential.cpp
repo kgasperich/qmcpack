@@ -47,6 +47,21 @@ void L2Potential::add(int groupID, std::unique_ptr<L2RadialPotential>&& ppot)
   PPset[groupID] = std::move(ppot);
 }
 
+void L2Potential::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<L2Potential&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void L2Potential::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<L2Potential&>(static_cast<const L2Potential&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
 
 L2Potential::Return_t L2Potential::evaluate(ParticleSet& P)
 {

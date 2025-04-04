@@ -275,7 +275,65 @@ struct BsplineFunctor : public OptimizableFunctorBase
               sCoef2 * (((A8 * t + A9) * t + A10) * t + A11) + sCoef3 * (((A12 * t + A13) * t + A14) * t + A15));
     return u;
   }
+// In BsplineFunctor.h
+inline void evaluate_batch(const std::vector<Real>& r,
+                         std::vector<Real>& u,
+                         std::vector<Real>& dudr,
+                         std::vector<Real>& d2udr2,
+                         std::vector<Real>& d3udr3) 
+{
+  const size_t n = r.size();
+  
+  // Process each point
+  #pragma omp simd
+  for (size_t i = 0; i < n; i++) {
+    if (r[i] >= cutoff_radius) {
+      dudr[i] = d2udr2[i] = d3udr3[i] = 0.0;
+      u[i] = 0.0;
+      continue;
+    }
 
+    Real r_scaled = r[i] * DeltaRInv;
+    int idx;
+    Real t;
+    getSplineBound(r_scaled, getMaxIndex(), idx, t);
+    
+    Real tp[4];
+    tp[0] = t * t * t;
+    tp[1] = t * t;
+    tp[2] = t;
+    tp[3] = 1.0;
+    
+    auto& coefs = *spline_coefs_;
+    
+    // Third derivative (d³u/dr³)
+    d3udr3[i] = DeltaRInv * DeltaRInv * DeltaRInv *
+        (coefs[idx + 0] * (d3A0 * tp[0] + d3A1 * tp[1] + d3A2 * tp[2] + d3A3 * tp[3]) +
+         coefs[idx + 1] * (d3A4 * tp[0] + d3A5 * tp[1] + d3A6 * tp[2] + d3A7 * tp[3]) +
+         coefs[idx + 2] * (d3A8 * tp[0] + d3A9 * tp[1] + d3A10 * tp[2] + d3A11 * tp[3]) +
+         coefs[idx + 3] * (d3A12 * tp[0] + d3A13 * tp[1] + d3A14 * tp[2] + d3A15 * tp[3]));
+    
+    // Second derivative (d²u/dr²)
+    d2udr2[i] = DeltaRInv * DeltaRInv *
+        (coefs[idx + 0] * (d2A0 * tp[0] + d2A1 * tp[1] + d2A2 * tp[2] + d2A3 * tp[3]) +
+         coefs[idx + 1] * (d2A4 * tp[0] + d2A5 * tp[1] + d2A6 * tp[2] + d2A7 * tp[3]) +
+         coefs[idx + 2] * (d2A8 * tp[0] + d2A9 * tp[1] + d2A10 * tp[2] + d2A11 * tp[3]) +
+         coefs[idx + 3] * (d2A12 * tp[0] + d2A13 * tp[1] + d2A14 * tp[2] + d2A15 * tp[3]));
+    
+    // First derivative (du/dr)
+    dudr[i] = DeltaRInv *
+        (coefs[idx + 0] * (dA0 * tp[0] + dA1 * tp[1] + dA2 * tp[2] + dA3 * tp[3]) +
+         coefs[idx + 1] * (dA4 * tp[0] + dA5 * tp[1] + dA6 * tp[2] + dA7 * tp[3]) +
+         coefs[idx + 2] * (dA8 * tp[0] + dA9 * tp[1] + dA10 * tp[2] + dA11 * tp[3]) +
+         coefs[idx + 3] * (dA12 * tp[0] + dA13 * tp[1] + dA14 * tp[2] + dA15 * tp[3]));
+    
+    // Function value (u)
+    u[i] = (coefs[idx + 0] * (A0 * tp[0] + A1 * tp[1] + A2 * tp[2] + A3 * tp[3]) +
+            coefs[idx + 1] * (A4 * tp[0] + A5 * tp[1] + A6 * tp[2] + A7 * tp[3]) +
+            coefs[idx + 2] * (A8 * tp[0] + A9 * tp[1] + A10 * tp[2] + A11 * tp[3]) +
+            coefs[idx + 3] * (A12 * tp[0] + A13 * tp[1] + A14 * tp[2] + A15 * tp[3]));
+  }
+}
   inline Real evaluate(Real r, Real& dudr, Real& d2udr2)
   {
     Real u(0);
@@ -302,6 +360,7 @@ struct BsplineFunctor : public OptimizableFunctorBase
     //         +2.0*evaluate(r+0.5*eps)
     //         -2.0*evaluate(r-0.5*eps)
     //         +1.0*evaluate(r-1.0*eps))/(eps*eps*eps);
+    //         return (coefs[i + 0] * (A0 * tp[0] + A1 * tp[1] + A2 * tp[2] + A3 * tp[3]) /
     r *= DeltaRInv;
     int i;
     Real t;

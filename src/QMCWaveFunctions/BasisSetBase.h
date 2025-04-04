@@ -170,6 +170,20 @@ struct SoaBasisSetBase
   virtual void evaluateVGHGH(const ParticleSet& P, int iat, vghgh_type& vghgh) = 0;
   //Evaluates the x,y, and z components of ionic gradient associated with "jion" of value.  Parks the raw data into "vgl" container.
   virtual void evaluateGradSourceV(const ParticleSet& P, int iat, const ParticleSet& ions, int jion, vgl_type& vgl) = 0;
+  /*virtual void mw_evaluateGradSourceV_Batch(const RefVectorWithLeader<SoaBasisSetBase>& basis_list,
+                                      const RefVectorWithLeader<ParticleSet>& P_list,
+                                      int iat,
+                                      const RefVectorWithLeader<ParticleSet>& ions_list,
+                                      const std::vector<int>& iat_src_list,
+                                      OffloadMWVGLArray& vgl_v) = 0;
+*/
+  virtual void mw_evaluateGradSourceV(const RefVectorWithLeader<SoaBasisSetBase>& basis_list,
+                                      const RefVectorWithLeader<ParticleSet>& P_list,
+                                      int iat,
+                                      const RefVectorWithLeader<ParticleSet>& ions_list,
+                                      int iat_src,
+                                      OffloadMWVGLArray& vgl_v) = 0;
+
   //Evaluates the x,y, and z components of ionic gradient associated with "jion" value, gradient, and laplacian.
   //    Parks the raw data into "vghgh" container.
   virtual void evaluateGradSourceVGL(const ParticleSet& P,

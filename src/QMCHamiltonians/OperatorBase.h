@@ -180,6 +180,22 @@ public:
    */
   virtual Return_t evaluate(ParticleSet& P) = 0;
 
+
+  /** Batched evaluation of operator over a list of walkers.
+  *  Default implementation just calls evaluate(P) per walker.
+  */
+  /*   virtual void mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                           const RefVectorWithLeader<ParticleSet>& p_list) {
+    for (size_t iw = 0; iw < op_list.size(); ++iw) {
+      op_list[iw].evaluate(p_list[iw]);
+    }
+  }
+*/
+  /// Force batched version to be implemented explicitly.
+  virtual void mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                           const RefVectorWithLeader<ParticleSet>& p_list) = 0;
+
+
   /** write about the class */
   virtual bool get(std::ostream& os) const = 0;
 
@@ -360,6 +376,12 @@ public:
                                  ParticleSet::ParticlePos& hf_term,
                                  ParticleSet::ParticlePos& pulay_term);
 
+  virtual void mw_evaluateIonDerivs(const RefVectorWithLeader<OperatorBase>& op_list,
+                                    const RefVectorWithLeader<ParticleSet>& p_list,
+                                    const RefVectorWithLeader<ParticleSet>& ion_list,
+                                    const RefVectorWithLeader<TrialWaveFunction>& psi_list,
+                                    std::vector<ParticleSet::ParticlePos>& hfdiag_list,
+                                    std::vector<ParticleSet::ParticlePos>& pulayterms_list);
   /** 
    * @brief Evaluate "B" matrix for observable.  Filippi scheme for computing fast derivatives.
 
@@ -372,6 +394,12 @@ public:
                                               const TWFFastDerivWrapper& psi,
                                               std::vector<ValueMatrix>& B)
   {}
+  // Default no-op implementation: override in Hamiltonians that use TWFFastDerivWrapper batching.
+  inline virtual void mw_evaluateOneBodyOpMatrix(const RefVectorWithLeader<OperatorBase>& op_list,
+                                                 const RefVectorWithLeader<ParticleSet>& p_list,
+                                                 const RefVectorWithLeader<TWFFastDerivWrapper>& psi_list,
+                                                 std::vector<std::vector<ValueMatrix>>& B_list)
+  {}
 
   /** 
    * @brief Evaluate "dB/dR" matrices for observable.  Filippi scheme for computing fast derivatives.
@@ -383,13 +411,30 @@ public:
    * @param[in,out] dB/dR. Specifically, [ dB/dx_iat, dB/dy_iat, dB/dz_iat ], B is defined above.
    * @return Void
    */
+  inline virtual void mw_evaluateIonDerivs(const RefVectorWithLeader<OperatorBase>& op_list,
+                                           const RefVectorWithLeader<ParticleSet>& p_list,
+                                           const RefVectorWithLeader<ParticleSet>& ion_list,
+                                           const RefVectorWithLeader<TrialWaveFunction>& psi_list,
+                                           std::vector<ParticleSet::ParticlePos>& hf_terms,
+                                           std::vector<ParticleSet::ParticlePos>& pulay_terms) const
+  {}
+
   inline virtual void evaluateOneBodyOpMatrixForceDeriv(ParticleSet& P,
                                                         ParticleSet& source,
                                                         const TWFFastDerivWrapper& psi,
                                                         const int iat,
                                                         std::vector<std::vector<ValueMatrix>>& Bforce)
   {}
-
+  inline virtual void mw_evaluateOneBodyOpMatrixForceDeriv(
+      const RefVectorWithLeader<OperatorBase>& ham_list,
+      const RefVectorWithLeader<ParticleSet>& p_list,
+      const RefVectorWithLeader<ParticleSet>& source_list,
+      const RefVectorWithLeader<TWFFastDerivWrapper>& psi_list,
+      int iat,
+      std::vector<std::vector<std::vector<ValueMatrix>>>& Bforce_list) const
+  {
+    // default no-op fallback
+  }
   /** make non local moves with particle-by-particle moves
    * @param P particle set
    * @return the number of accepted moves

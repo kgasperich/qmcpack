@@ -352,6 +352,22 @@ MPC::Return_t MPC::evalLR(ParticleSet& P) const
   return LR;
 }
 
+void MPC::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<MPC&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void MPC::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<MPC&>(static_cast<const MPC&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
 MPC::Return_t MPC::evaluate(ParticleSet& P)
 {
   value_ = evalSR(P) + evalLR(P) + Vconst;

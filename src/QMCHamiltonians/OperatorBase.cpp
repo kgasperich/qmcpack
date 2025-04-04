@@ -185,6 +185,19 @@ void OperatorBase::evaluateIonDerivs(ParticleSet& P,
                                      ParticleSet::ParticlePos& pulay_term)
 {}
 
+void OperatorBase::mw_evaluateIonDerivs(const RefVectorWithLeader<OperatorBase>& op_list,
+                                        const RefVectorWithLeader<ParticleSet>& p_list,
+                                        const RefVectorWithLeader<ParticleSet>& ion_list,
+                                        const RefVectorWithLeader<TrialWaveFunction>& psi_list,
+                                        std::vector<ParticleSet::ParticlePos>& hfdiag_list,
+                                        std::vector<ParticleSet::ParticlePos>& pulayterms_list)
+{
+  const int nw = op_list.size();
+  for (int iw = 0; iw < nw; ++iw)
+  {
+    op_list[iw].evaluateIonDerivs(p_list[iw], ion_list[iw], psi_list[iw], hfdiag_list[iw], pulayterms_list[iw]);
+  }
+}
 void OperatorBase::updateSource(ParticleSet& s) {}
 
 OperatorBase::Return_t OperatorBase::getEnsembleAverage() { return 0.0; }

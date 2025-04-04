@@ -58,6 +58,10 @@ public:
 #endif
 
   Return_t evaluate(ParticleSet& P) override;
+  void mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                   const RefVectorWithLeader<ParticleSet>& p_list) override;
+
+
   Return_t evaluateDeterministic(ParticleSet& P) override;
   void mw_evaluate(const RefVectorWithLeader<OperatorBase>& o_list,
                    const RefVectorWithLeader<TrialWaveFunction>& wf_list,
@@ -81,6 +85,13 @@ public:
                                            const std::vector<ListenerVector<Real>>& listeners,
                                            const std::vector<ListenerVector<Real>>& listeners_ions) const override;
 
+  virtual void mw_evaluateIonDerivs(const RefVectorWithLeader<OperatorBase>& op_list,
+                                    const RefVectorWithLeader<ParticleSet>& p_list,
+                                    const RefVectorWithLeader<ParticleSet>& ion_list,
+                                    const RefVectorWithLeader<TrialWaveFunction>& psi_list,
+                                    std::vector<ParticleSet::ParticlePos>& hf_terms,
+                                    std::vector<ParticleSet::ParticlePos>& pulay_terms) const override;
+
   void evaluateIonDerivs(ParticleSet& P,
                          ParticleSet& ions,
                          TrialWaveFunction& psi,
@@ -88,6 +99,20 @@ public:
                          ParticleSet::ParticlePos& pulay_terms) override;
 
   void evaluateOneBodyOpMatrix(ParticleSet& P, const TWFFastDerivWrapper& psi, std::vector<ValueMatrix>& B) override;
+
+  virtual void mw_evaluateOneBodyOpMatrix(const RefVectorWithLeader<OperatorBase>& op_list,
+                                          const RefVectorWithLeader<ParticleSet>& p_list,
+                                          const RefVectorWithLeader<TWFFastDerivWrapper>& psi_list,
+                                          std::vector<std::vector<ValueMatrix>>& B_list) override;
+
+  virtual void mw_evaluateOneBodyOpMatrixForceDeriv(
+      const RefVectorWithLeader<OperatorBase>& ham_list,
+      const RefVectorWithLeader<ParticleSet>& P_list,
+      const RefVectorWithLeader<ParticleSet>& source_list,
+      const RefVectorWithLeader<TWFFastDerivWrapper>& psi_list,
+      const int iat,
+      std::vector<std::vector<std::vector<ValueMatrix>>>& Bforce_list) const override;
+
 
   void evaluateOneBodyOpMatrixForceDeriv(ParticleSet& P,
                                          ParticleSet& source,

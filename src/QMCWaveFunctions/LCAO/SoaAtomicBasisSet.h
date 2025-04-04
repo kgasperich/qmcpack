@@ -253,7 +253,6 @@ public:
   inline void evaluateVGH(const LAT& lattice, const T r, const PosType& dr, const size_t offset, VGH& vgh, PosType Tv)
   {
     int TransX, TransY, TransZ;
-
     PosType dr_new;
     T r_new;
 

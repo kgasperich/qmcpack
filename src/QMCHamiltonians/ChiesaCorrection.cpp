@@ -36,6 +36,23 @@ std::unique_ptr<OperatorBase> ChiesaCorrection::makeClone(ParticleSet& qp, Trial
   return std::make_unique<ChiesaCorrection>(qp, psi);
 }
 
+
+void ChiesaCorrection::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<ChiesaCorrection&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void ChiesaCorrection::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<ChiesaCorrection&>(static_cast<const ChiesaCorrection&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
 ChiesaCorrection::Return_t ChiesaCorrection::evaluate(ParticleSet& P) { return value_ = psi_ref_.KECorrection(); }
 
 } // namespace qmcplusplus

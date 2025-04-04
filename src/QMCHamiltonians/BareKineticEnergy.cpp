@@ -102,6 +102,23 @@ void BareKineticEnergy::deleteParticleQuantities()
 }
 #endif
 
+// 1. Non-const version: used by mw_auxHevaluate (even if not actually used for this op)
+void BareKineticEnergy::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                                    const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<BareKineticEnergy&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+// 2. Const version: used in main Hamiltonian evaluation path
+void BareKineticEnergy::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                                    const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                                    const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<BareKineticEnergy&>(static_cast<const BareKineticEnergy&>(op_list[iw])).evaluate(p_list[iw]);
+}
+
 
 Return_t BareKineticEnergy::evaluate(ParticleSet& P)
 {
@@ -279,6 +296,193 @@ void BareKineticEnergy::evaluateIonDerivs(ParticleSet& P,
   pulay_terms += pulaytmpreal_;
 }
 
+
+void BareKineticEnergy::mw_evaluateIonDerivs(const RefVectorWithLeader<OperatorBase>& op_list,
+                                             const RefVectorWithLeader<ParticleSet>& p_list,
+                                             const RefVectorWithLeader<ParticleSet>& ion_list,
+                                             const RefVectorWithLeader<TrialWaveFunction>& psi_list,
+                                             std::vector<ParticleSet::ParticlePos>& hf_terms,
+                                             std::vector<ParticleSet::ParticlePos>& pulay_terms) const
+{
+  const int nw = op_list.size();
+  for (int iw = 0; iw < nw; ++iw)
+  {
+    BareKineticEnergy& ham = static_cast<BareKineticEnergy&>(op_list[iw]);
+    ham.evaluateIonDerivs(p_list[iw], ion_list[iw], psi_list[iw], hf_terms[iw], pulay_terms[iw]);
+  }
+}
+
+
+void BareKineticEnergy::mw_evaluateOneBodyOpMatrixForceDeriv(
+    const RefVectorWithLeader<OperatorBase>& ham_list,
+    const RefVectorWithLeader<ParticleSet>& P_list,
+    const RefVectorWithLeader<ParticleSet>& source_list,
+    const RefVectorWithLeader<TWFFastDerivWrapper>& psi_list,
+    const int iat,
+    std::vector<std::vector<std::vector<ValueMatrix>>>& Bforce_list) const
+{
+  const int nw = ham_list.size();
+  if (nw == 0)
+    return;
+  // Process each walker sequentially to avoid thread safety issues
+  for (int iw = 0; iw < nw; ++iw)
+  {
+    BareKineticEnergy& ham   = static_cast<BareKineticEnergy&>(ham_list[iw]);
+    ParticleSet& P           = P_list[iw];
+    ParticleSet& source      = source_list[iw];
+    TWFFastDerivWrapper& psi = psi_list[iw];
+
+    // Call the single-walker implementation
+    ham.evaluateOneBodyOpMatrixForceDeriv(P, source, psi, iat, Bforce_list[iw]);
+  }
+}
+
+
+/*
+void BareKineticEnergy::mw_evaluateOneBodyOpMatrixForceDeriv(
+    const RefVectorWithLeader<OperatorBase>& ham_list,
+    const RefVectorWithLeader<ParticleSet>& P_list,
+    const RefVectorWithLeader<ParticleSet>& source_list,
+    const RefVectorWithLeader<TWFFastDerivWrapper>& psi_list,
+    const int iat,
+    std::vector<std::vector<std::vector<ValueMatrix>>>& Bforce_list) const
+{
+  const int nw = ham_list.size();
+  if (nw == 0) return;
+
+  // Pre-allocate per-walker data structures
+  std::vector<ParticleSet::ParticleGradient> G(nw), Gtmp(nw);
+  std::vector<ParticleSet::ParticleLaplacian> L(nw), Ltmp(nw);
+
+  std::vector<std::vector<ValueMatrix>> M(nw);
+  std::vector<std::vector<GradMatrix>> grad_M(nw);
+  std::vector<std::vector<ValueMatrix>> lapl_M(nw);
+
+  std::vector<TinyVector<ParticleSet::ParticleGradient, OHMMS_DIM>> dG(nw);
+  std::vector<TinyVector<ParticleSet::ParticleLaplacian, OHMMS_DIM>> dL(nw);
+
+  std::vector<std::vector<std::vector<ValueMatrix>>> dm(nw);
+  std::vector<std::vector<std::vector<ValueMatrix>>> dlapl(nw);
+  std::vector<std::vector<std::vector<GradMatrix>>> dgmat(nw);
+
+  // Initialize structures for each walker
+  for (int iw = 0; iw < nw; ++iw)
+  {
+    ParticleSet& P = P_list[iw];
+    TWFFastDerivWrapper& psi = psi_list[iw];
+
+    const IndexType nelec = P.getTotalNum();
+    const IndexType ngroups = P.groups();
+
+    G[iw].resize(nelec);
+    Gtmp[iw].resize(nelec);
+    L[iw].resize(nelec);
+    Ltmp[iw].resize(nelec);
+
+    // Initialize derivative vectors
+    for (int dim = 0; dim < OHMMS_DIM; dim++)
+    {
+      dG[iw][dim].resize(nelec);
+      dL[iw][dim].resize(nelec);
+    }
+
+    // Verify Bforce dimensions
+    assert(Bforce_list[iw].size() == OHMMS_DIM);
+    assert(Bforce_list[iw][0].size() == ngroups);
+
+    // Initialize matrices
+    M[iw].resize(ngroups);
+    grad_M[iw].resize(ngroups);
+    lapl_M[iw].resize(ngroups);
+
+    std::vector<ValueMatrix> mtmp;
+    mtmp.reserve(ngroups);
+
+    for (int ig = 0; ig < ngroups; ig++)
+    {
+      const IndexType sid = psi.getTWFGroupIndex(ig);
+      const IndexType norbs = psi.numOrbitals(sid);
+      const IndexType first = P.first(ig);
+      const IndexType last = P.last(ig);
+      const IndexType nptcls = last - first;
+
+      ValueMatrix zeromat;
+      GradMatrix zerogradmat;
+      zeromat.resize(nptcls, norbs);
+      zerogradmat.resize(nptcls, norbs);
+
+      mtmp.push_back(zeromat);
+      M[iw].push_back(zeromat);
+      grad_M[iw].push_back(zerogradmat);
+      lapl_M[iw].push_back(zeromat);
+    }
+
+    // Setup dimension vectors
+    dm[iw].resize(OHMMS_DIM);
+    dlapl[iw].resize(OHMMS_DIM);
+    dgmat[iw].resize(OHMMS_DIM);
+
+    for (int dim = 0; dim < OHMMS_DIM; dim++)
+    {
+      dm[iw][dim] = mtmp;
+      dlapl[iw][dim] = mtmp;
+      dgmat[iw][dim] = grad_M[iw];
+    }
+  }
+
+  // Evaluate wavefunction quantities for each walker
+  for (int iw = 0; iw < nw; ++iw)
+  {
+    ParticleSet& P = P_list[iw];
+    ParticleSet& source = source_list[iw];
+    TWFFastDerivWrapper& psi = psi_list[iw];
+
+    // Get wavefunction values
+    psi.getEGradELaplM(P, M[iw], grad_M[iw], lapl_M[iw]);
+    psi.getIonGradIonGradELaplM(P, source, iat, dm[iw], dgmat[iw], dlapl[iw]);
+    psi.evaluateJastrowVGL(P, G[iw], L[iw]);
+    psi.evaluateJastrowGradSource(P, source, iat, dG[iw], dL[iw]);
+  }
+
+  // Compute final Bforce values for all walkers
+  for (int iw = 0; iw < nw; ++iw)
+  {
+   // const BareKineticEnergy& ham = ham_list[iw];
+    BareKineticEnergy& ham = static_cast<BareKineticEnergy&>(ham_list[iw]);
+    ParticleSet& P = P_list[iw];
+    TWFFastDerivWrapper& psi = psi_list[iw];
+
+    const IndexType ngroups = P.groups();
+
+    // Compute matrices for all dimensions
+    for (int idim = 0; idim < OHMMS_DIM; idim++)
+    {
+      for (int ig = 0; ig < ngroups; ig++)
+      {
+        const IndexType sid = psi.getTWFGroupIndex(ig);
+        const IndexType norbs = psi.numOrbitals(sid);
+        const IndexType first = P.first(ig);
+        const IndexType last = P.last(ig);
+        const IndexType nptcls = last - first;
+
+        for (int iel = first; iel < last; iel++)
+        {
+          for (int iorb = 0; iorb < norbs; iorb++)
+          {
+            Bforce_list[iw][idim][sid][iel - first][iorb] = RealType(ham.minus_over_2m_[ig]) *
+                (dlapl[iw][idim][sid][iel - first][iorb] +
+                 RealType(2.0) *
+                     (dot(GradType(G[iw][iel]), dgmat[iw][idim][sid][iel - first][iorb]) +
+                      dot(GradType(dG[iw][idim][iel]), grad_M[iw][sid][iel - first][iorb])) +
+                 M[iw][sid][iel - first][iorb] * ValueType(dL[iw][idim][iel] + 2.0 * dot(dG[iw][idim][iel], G[iw][iel])) +
+                 ValueType(L[iw][iel] + dot(G[iw][iel], G[iw][iel])) * dm[iw][idim][sid][iel - first][iorb]);
+          }
+        }
+      }
+    }
+  }
+}
+*/
 void BareKineticEnergy::evaluateOneBodyOpMatrix(ParticleSet& P,
                                                 const TWFFastDerivWrapper& psi,
                                                 std::vector<ValueMatrix>& B)
@@ -338,6 +542,18 @@ void BareKineticEnergy::evaluateOneBodyOpMatrix(ParticleSet& P,
   }
 }
 
+void BareKineticEnergy::mw_evaluateOneBodyOpMatrix(const RefVectorWithLeader<OperatorBase>& op_list,
+                                                   const RefVectorWithLeader<ParticleSet>& p_list,
+                                                   const RefVectorWithLeader<TWFFastDerivWrapper>& psi_list,
+                                                   std::vector<std::vector<ValueMatrix>>& B_list)
+{
+  const int nw = op_list.size();
+  for (int iw = 0; iw < nw; ++iw)
+  {
+    BareKineticEnergy& ham = static_cast<BareKineticEnergy&>(op_list[iw]);
+    ham.evaluateOneBodyOpMatrix(p_list[iw], psi_list[iw], B_list[iw]);
+  }
+}
 void BareKineticEnergy::evaluateOneBodyOpMatrixForceDeriv(ParticleSet& P,
                                                           ParticleSet& source,
                                                           const TWFFastDerivWrapper& psi,

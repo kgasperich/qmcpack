@@ -170,6 +170,23 @@ void ForceChiesaPBCAA::evaluateLR_AA()
 }
 
 
+void ForceChiesaPBCAA::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<ForceChiesaPBCAA&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void ForceChiesaPBCAA::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<ForceChiesaPBCAA&>(static_cast<const ForceChiesaPBCAA&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
+
 ForceChiesaPBCAA::Return_t ForceChiesaPBCAA::evaluate(ParticleSet& P)
 {
   forces_ = 0.0;

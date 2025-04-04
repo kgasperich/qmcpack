@@ -274,6 +274,8 @@ void QMCDriverNew::initialLogEvaluation(int crowd_id,
   const RefVectorWithLeader<QMCHamiltonian> walker_hamiltonians(crowd.get_walker_hamiltonians()[0],
                                                                 crowd.get_walker_hamiltonians());
 
+  const RefVectorWithLeader<MCPWalker> walker_mcps(crowd.get_walkers()[0], crowd.get_walkers());
+
   ResourceCollectionTeamLock<ParticleSet> pset_res_lock(crowd.getSharedResource().pset_res, walker_elecs);
   ResourceCollectionTeamLock<TrialWaveFunction> twfs_res_lock(crowd.getSharedResource().twf_res, walker_twfs);
   ResourceCollectionTeamLock<QMCHamiltonian> hams_res_lock(crowd.getSharedResource().ham_res, walker_hamiltonians);
@@ -300,11 +302,25 @@ void QMCDriverNew::initialLogEvaluation(int crowd_id,
   for (int iw = 0; iw < crowd.size(); ++iw)
     resetSigNLocalEnergy(walkers[iw], walker_twfs[iw], local_energies[iw]);
 
-  auto evaluateNonPhysicalHamiltonianElements = [](QMCHamiltonian& ham, ParticleSet& pset, MCPWalker& walker) {
-    ham.auxHevaluate(pset, walker);
-  };
-  for (int iw = 0; iw < crowd.size(); ++iw)
-    evaluateNonPhysicalHamiltonianElements(walker_hamiltonians[iw], walker_elecs[iw], walkers[iw]);
+// DELETE ME: ANOUAR
+//  auto evaluateNonPhysicalHamiltonianElements = [](QMCHamiltonian& ham, ParticleSet& pset, MCPWalker& walker) {
+//    ham.auxHevaluate(pset, walker);
+//  };
+//  for (int iw = 0; iw < crowd.size(); ++iw)
+//    evaluateNonPhysicalHamiltonianElements(walker_hamiltonians[iw], walker_elecs[iw], walkers[iw]);
+
+
+
+auto evaluateNonPhysicalHamiltonianElementsBatch =
+  [](const RefVectorWithLeader<QMCHamiltonian>& ham_list,
+     const RefVectorWithLeader<ParticleSet>& elec_list,
+     const RefVectorWithLeader<MCPWalker>& walker_list)
+{
+	QMCHamiltonian::mw_auxHevaluate(ham_list, elec_list, walker_list);
+
+};
+evaluateNonPhysicalHamiltonianElementsBatch(walker_hamiltonians, walker_elecs, walker_mcps);
+
 
   auto savePropertiesIntoWalker = [](QMCHamiltonian& ham, MCPWalker& walker) {
     ham.saveProperty(walker.getPropertyBase());

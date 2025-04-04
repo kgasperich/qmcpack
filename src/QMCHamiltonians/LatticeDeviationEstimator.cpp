@@ -93,6 +93,22 @@ bool LatticeDeviationEstimator::get(std::ostream& os) const
   return true;
 }
 
+void LatticeDeviationEstimator::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<LatticeDeviationEstimator&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void LatticeDeviationEstimator::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<LatticeDeviationEstimator&>(static_cast<const LatticeDeviationEstimator&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
 LatticeDeviationEstimator::Return_t LatticeDeviationEstimator::evaluate(ParticleSet& P)
 { // calculate <r^2> averaged over lattice sites
   value_ = 0.0;

@@ -95,6 +95,24 @@ void SpeciesKineticEnergy::setObservables(PropertySetType& plist)
   copy(species_kinetic.begin(), species_kinetic.end(), plist.begin() + my_index_);
 }
 
+
+void SpeciesKineticEnergy::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<SpeciesKineticEnergy&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void SpeciesKineticEnergy::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<SpeciesKineticEnergy&>(static_cast<const SpeciesKineticEnergy&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
+
 SpeciesKineticEnergy::Return_t SpeciesKineticEnergy::evaluate(ParticleSet& P)
 {
   std::fill(species_kinetic.begin(), species_kinetic.end(), 0.0);

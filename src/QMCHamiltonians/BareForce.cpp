@@ -51,6 +51,23 @@ void BareForce::setObservables(PropertySetType& plist) { setObservablesF(plist);
 
 void BareForce::setParticlePropertyList(PropertySetType& plist, int offset) { setParticleSetF(plist, offset); }
 
+void BareForce::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<BareForce&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void BareForce::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<BareForce&>(static_cast<const BareForce&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
+
 BareForce::Return_t BareForce::evaluate(ParticleSet& P)
 {
   forces_                                   = forces_ion_ion_;

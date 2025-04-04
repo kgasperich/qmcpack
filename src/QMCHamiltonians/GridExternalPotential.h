@@ -40,6 +40,13 @@ public:
 
   //functions for physical (hamiltonian component) estimator
   Return_t evaluate(ParticleSet& P) override;
+void mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                 const RefVectorWithLeader<ParticleSet>& p_list) override;
+
+void mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                 const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                 const RefVectorWithLeader<ParticleSet>& p_list) const override;
+
   Return_t evaluate(ParticleSet& P, std::vector<NonLocalData>& Txy);
 
 #if !defined(REMOVE_TRACEMANAGER)

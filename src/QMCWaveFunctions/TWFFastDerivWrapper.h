@@ -98,6 +98,72 @@ public:
    *  @return Void
    */
   void getM(const ParticleSet& P, std::vector<ValueMatrix>& mmat) const;
+  static void mw_getM(const RefVectorWithLeader<TWFFastDerivWrapper>& twf_list,
+                      const RefVectorWithLeader<ParticleSet>& p_list,
+                      std::vector<std::vector<ValueMatrix>>& M);
+
+  static void mw_getGSMatrices(const RefVectorWithLeader<TWFFastDerivWrapper>& twf_list,
+                               const std::vector<std::vector<ValueMatrix>>& A,
+                               std::vector<std::vector<ValueMatrix>>& Aslice);
+
+  static void mw_invertMatrices(const RefVectorWithLeader<TWFFastDerivWrapper>& twf_list,
+                                const std::vector<std::vector<ValueMatrix>>& M,
+                                std::vector<std::vector<ValueMatrix>>& Minv);
+  static void mw_buildX(const RefVectorWithLeader<TWFFastDerivWrapper>& psi_wrapper_list,
+                        const std::vector<std::vector<ValueMatrix>>& Minv,
+                        const std::vector<std::vector<ValueMatrix>>& B_gs,
+                        std::vector<std::vector<ValueMatrix>>& X);
+
+  static void mw_trAB(const RefVectorWithLeader<TWFFastDerivWrapper>& wf_list,
+                      const std::vector<std::vector<ValueMatrix>>& A_list,
+                      const std::vector<std::vector<std::vector<ValueMatrix>>>& B_list,
+                      std::vector<ValueType>& results,
+                      int dim);
+
+  static void mw_computeGSDerivative(const RefVectorWithLeader<TWFFastDerivWrapper>& wf_list,
+                                     const std::vector<std::vector<ValueMatrix>>& Minv_list,
+                                     const std::vector<std::vector<ValueMatrix>>& X_list,
+                                     const std::vector<std::vector<std::vector<ValueMatrix>>>& dM_list,
+                                     const std::vector<std::vector<std::vector<ValueMatrix>>>& dB_list,
+                                     std::vector<ValueType>& results,
+                                     int dim);
+
+  static void mw_evaluateJastrowGradSource(const RefVectorWithLeader<TWFFastDerivWrapper>& wf_list,
+                                           const RefVectorWithLeader<ParticleSet>& p_list,
+                                           const RefVectorWithLeader<ParticleSet>& ion_list,
+                                           int iat,
+                                           std::vector<ParticleSet::ParticleGradient>& wfgradraw);
+
+  static void mw_wipeMatrices(const RefVectorWithLeader<TWFFastDerivWrapper>& wf_list,
+                              std::vector<std::vector<ValueMatrix>>& matrices_list);
+
+  static void mw_wipeDerivMatrices(const RefVectorWithLeader<TWFFastDerivWrapper>& wf_list,
+                                   std::vector<std::vector<std::vector<ValueMatrix>>>& matrices);
+
+  static void mw_getIonGradM_batch(const RefVectorWithLeader<TWFFastDerivWrapper>& wf_list,
+                                        const RefVectorWithLeader<ParticleSet>& P_list,
+                                        const RefVectorWithLeader<ParticleSet>& source_list,
+                                        const std::vector<int>& iat_list,
+                                        std::vector<std::vector<std::vector<ValueMatrix>>>& dmvec_list);
+
+  static void mw_getIonGradM(const RefVectorWithLeader<TWFFastDerivWrapper>& wf_list,
+                             const RefVectorWithLeader<ParticleSet>& P_list,
+                             const RefVectorWithLeader<ParticleSet>& source_list,
+                             int iat,
+                             std::vector<std::vector<std::vector<ValueMatrix>>>& dmvec_list);
+
+  static void mw_getGSMatricesForDerivatives(const RefVectorWithLeader<TWFFastDerivWrapper>& psi_wrapper_list,
+                                             const std::vector<std::vector<std::vector<ValueMatrix>>>& A_list,
+                                             std::vector<std::vector<std::vector<ValueMatrix>>>& Aslice_list,
+                                             int dim_index);
+
+  static void mw_getIonGradIonGradELaplM(const RefVectorWithLeader<TWFFastDerivWrapper>& wf_list,
+                                         const RefVectorWithLeader<ParticleSet>& P_list,
+                                         const RefVectorWithLeader<ParticleSet>& source_list,
+                                         int iat,
+                                         std::vector<std::vector<std::vector<ValueMatrix>>>& dmvec_list,
+                                         std::vector<std::vector<std::vector<GradMatrix>>>& dgmat_list,
+                                         std::vector<std::vector<std::vector<ValueMatrix>>>& dlmat_list);
 
   /** @brief Returns value of all orbitals (relevant to given species/group) at a particular particle coordinate.
    *

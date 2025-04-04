@@ -46,6 +46,22 @@ std::string DensityEstimator::getClassName() const { return "DensityEstimator"; 
 
 void DensityEstimator::resetTargetParticleSet(ParticleSet& P) {}
 
+void DensityEstimator::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list)
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    static_cast<DensityEstimator&>(op_list[iw]).evaluate(p_list[iw]);
+}
+
+void DensityEstimator::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
+                            const RefVectorWithLeader<TrialWaveFunction>& wf_list,
+                            const RefVectorWithLeader<ParticleSet>& p_list) const
+{
+  for (int iw = 0; iw < p_list.size(); ++iw)
+    const_cast<DensityEstimator&>(static_cast<const DensityEstimator&>(op_list[iw]))
+        .evaluate(p_list[iw]);
+}
+
 DensityEstimator::Return_t DensityEstimator::evaluate(ParticleSet& P)
 {
   if (t_walker_ == nullptr)
