@@ -137,13 +137,9 @@ ACForce::Return_t ACForce::evaluate(ParticleSet& P)
 void ACForce::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
                           const RefVectorWithLeader<ParticleSet>& p_list)
 {
-	  const int nw = op_list.size();
-  // No walkers? Just return.
-  if (nw == 0)
-    return;
 
   // Loop over walkers, casting each OperatorBase to an ACForce
-  for (int iw = 0; iw < nw; ++iw)
+/*  for (int iw = 0; iw < nw; ++iw)
   {
     ACForce& this_op = static_cast<ACForce&>(op_list[iw]);
     ParticleSet& P    = p_list[iw];
@@ -152,8 +148,12 @@ void ACForce::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
     // This respects the fastDerivatives_ check inside evaluate(...).
     this_op.evaluate(P);
   }
-	/*
+	*/
   const int nw = op_list.size();
+  // No walkers? Just return.
+  if (nw == 0)
+    return;
+
 
   // Cast first operator as ACForce to initialize the leaders
   ACForce& op0 = static_cast<ACForce&>(op_list[0]);
@@ -209,7 +209,7 @@ void ACForce::mw_evaluate(const RefVectorWithLeader<OperatorBase>& op_list,
 
     op.f_epsilon_ = op.compute_regularizer_f(op.psi_.G, op.reg_epsilon_);
   }
-  */
+  
 }
 
 void ACForce::resetTargetParticleSet(ParticleSet& P) {}

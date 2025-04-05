@@ -665,24 +665,24 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateGradSourceV(
     const RefVectorWithLeader<ParticleSet>& P_list,
     int iat,
     const RefVectorWithLeader<ParticleSet>& ions_list,
-    int jion,
+    int jion, 
     OffloadMWVGLArray& vgl_v)
 {
   assert(this == &basis_list.getLeader());
   auto& basis_leader = basis_list.template getCastedLeader<SoaLocalizedBasisSet<COT, ORBT>>();
   const size_t nw = P_list.size();
   
-  // Check dimensions for gradient-only array
-  assert(vgl_v.size(0) == 3); // Just gradients (x,y,z)
+  // Check dimensions for gradient array (assuming it has all 5 components: V,G,L)
+  assert(vgl_v.size(0) == 3);
   assert(vgl_v.size(1) == nw);
   assert(vgl_v.size(2) == BasisSetSize);
   
   // Zero out the gradient components
   for (size_t iw = 0; iw < nw; iw++) {
     for (int ib = 0; ib < BasisSetSize; ib++) {
-      vgl_v(0, iw, ib) = 0; // x gradient
-      vgl_v(1, iw, ib) = 0; // y gradient
-      vgl_v(2, iw, ib) = 0; // z gradient
+      vgl_v(1, iw, ib) = 0; // x gradient
+      vgl_v(2, iw, ib) = 0; // y gradient
+      vgl_v(3, iw, ib) = 0; // z gradient
     }
   }
   
@@ -695,25 +695,20 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateGradSourceV(
   Tv_list.resize(3ULL * nw);
   displ_list_tr.resize(3ULL * nw);
   
-  auto* Tv_host = Tv_list.data();
-  auto* displ_host = displ_list_tr.data();
-  
   // Fill displacement and Tv vectors for each walker
   for (size_t iw = 0; iw < nw; iw++) {
     const auto& P = P_list[iw];
-    const auto& ions = ions_list[iw];
-    
+    const auto& coordR = P.activeR(iat);
     const auto& d_table = P.getDistTableAB(myTableIndex);
     const auto& dist = (P.getActivePtcl() == iat) ? d_table.getTempDists() : d_table.getDistRow(iat);
     const auto& displ = (P.getActivePtcl() == iat) ? d_table.getTempDispls() : d_table.getDisplRow(iat);
-    const auto& coordR = P.activeR(iat);
     
     // Fill Tv and displacement data for this walker
     for (int dim = 0; dim < 3; dim++) {
       size_t idx = dim + 3ULL * iw;
-      RealType val = (ions.R[jion][dim] - coordR[dim]) - displ[jion][dim];
-      Tv_host[idx] = val;
-      displ_host[idx] = displ[jion][dim];
+      RealType val = (ions_.R[jion][dim] - coordR[dim]) - displ[jion][dim];
+      Tv_list[idx] = val;
+      displ_list_tr[idx] = displ[jion][dim];
     }
   }
   
@@ -723,17 +718,10 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateGradSourceV(
 #endif
   displ_list_tr.updateTo();
   
-  // Get the species ID and basis offset for the ion
-  int s_id = IonID[jion];
-  size_t basis_offset = BasisOffset[jion];
-  
-  // Extract basis refs for this species
-  auto basis_refs = extractOneSpeciesBasisRefList(basis_list, s_id);
-  
-  // Create a temporary full VGL array
+
   OffloadMWVGLArray temp_vgl;
   temp_vgl.resize(5, nw, BasisSetSize);
-  
+
   // Zero out the temporary array
   for (size_t iw = 0; iw < nw; iw++) {
     for (int ib = 0; ib < BasisSetSize; ib++) {
@@ -744,13 +732,19 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateGradSourceV(
       temp_vgl(4, iw, ib) = 0; // laplacian
     }
   }
+  // Get the species ID for this ion
+  int s_id = IonID[jion];
+  
+  // Extract basis refs for this species
+  auto basis_refs = extractOneSpeciesBasisRefList(basis_list, s_id);
   
   // Call the mw_evaluateVGL function with the specific center and offset
   LOBasisSet[s_id]->mw_evaluateVGL(basis_refs, pset_leader.getLattice(), temp_vgl,
                                   displ_list_tr, Tv_list, nw, BasisSetSize,
-                                  jion, basis_offset, NumCenters);
-  
-  // Copy just the gradient components to the output array
+                                  jion, BasisOffset[jion], NumCenters);
+
+
+    // Copy just the gradient components from the temporary array to the output array
   for (size_t iw = 0; iw < nw; iw++) {
     for (int ib = 0; ib < BasisSetSize; ib++) {
       vgl_v(0, iw, ib) = temp_vgl(1, iw, ib); // x gradient
@@ -759,7 +753,6 @@ void SoaLocalizedBasisSet<COT, ORBT>::mw_evaluateGradSourceV(
     }
   }
 }
-
 template<class COT, typename ORBT>
 void SoaLocalizedBasisSet<COT, ORBT>::evaluateGradSourceV(const ParticleSet& P,
                                                           int iat,

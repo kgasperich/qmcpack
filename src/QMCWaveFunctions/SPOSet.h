@@ -45,6 +45,7 @@ public:
     DIM     = OHMMS_DIM,
     DIM_VGL = OHMMS_DIM + 2, // Value(1) + Gradients(OHMMS_DIM) + Laplacian(1)
     DIM_GRAD= OHMMS_DIM      //Gradients(OHMMS_DIM)  
+
   };
   using ValueType         = T;
   using PosType           = QMCTraits::QTBase::PosType;

@@ -244,7 +244,7 @@ void TWFFastDerivWrapper::mw_getGSMatricesForDerivatives(
     int dim_index)
 
 {
-	
+	/*
   const int nw = psi_wrapper_list.size();
   if (nw == 0)
     return;
@@ -283,7 +283,7 @@ void TWFFastDerivWrapper::mw_getGSMatricesForDerivatives(
         }
       }
     }
-  }/*
+  }*/
 	 const int nw = psi_wrapper_list.size();
   if (nw == 0) return;
 
@@ -303,7 +303,7 @@ void TWFFastDerivWrapper::mw_getGSMatricesForDerivatives(
 
     // Call serial implementation
     wf.getGSMatrices(A, Aslice);
-  }*/
+  }
 }
 
 
@@ -311,7 +311,7 @@ void TWFFastDerivWrapper::mw_getM(const RefVectorWithLeader<TWFFastDerivWrapper>
                                   const RefVectorWithLeader<ParticleSet>& p_list,
                                   std::vector<std::vector<ValueMatrix>>& m_list)
 {
-/*  const int nw = wf_list.size();
+  const int nw = wf_list.size();
   if (nw == 0)
     return;
   
@@ -319,11 +319,8 @@ void TWFFastDerivWrapper::mw_getM(const RefVectorWithLeader<TWFFastDerivWrapper>
   for (int iw = 0; iw < nw; ++iw){
     p_list[iw].update();
     wf_list[iw].getM(p_list[iw], m_list[iw]);
-}*/
-    
-  const int nw = wf_list.size();
-  if (nw == 0)
-    return;
+}
+  /*  
   // Get the number of groups from the first walker
   const IndexType ngroups = wf_list[0].spos_.size();
   
@@ -363,13 +360,13 @@ void TWFFastDerivWrapper::mw_getM(const RefVectorWithLeader<TWFFastDerivWrapper>
     // Make batched call to evaluate_notranspose
     spo_refs[0].mw_evaluate_notranspose(spo_refs, p_list, first, last, 
                                       logdet_refs, dlogdet_refs, d2logdet_refs);
-  }
+  }*/
 }
 void TWFFastDerivWrapper::mw_invertMatrices(const RefVectorWithLeader<TWFFastDerivWrapper>& wf_list,
                                             const std::vector<std::vector<ValueMatrix>>& M_list,
                                             std::vector<std::vector<ValueMatrix>>& Minv_list)
 {
-	
+	/*
   const int nw = wf_list.size();
   if (nw == 0)
     return;
@@ -408,8 +405,8 @@ void TWFFastDerivWrapper::mw_invertMatrices(const RefVectorWithLeader<TWFFastDer
       // Invert the matrix
       invert_matrix(Minv_list[iw][id]);
     }
-  }
-/*
+  }*/
+
 const int nw = wf_list.size();
   if (nw == 0) return;
 
@@ -425,7 +422,7 @@ const int nw = wf_list.size();
     wf.invertMatrices(M, Minv);
   }
 
-*/
+
 }
 
 void TWFFastDerivWrapper::computeMDDerivatives_Obs(const std::vector<ValueMatrix>& Minv_Mv,
@@ -960,7 +957,12 @@ void TWFFastDerivWrapper::buildX(const std::vector<ValueMatrix>& Minv,
         }
   }
 }
-
+<<<<<<< HEAD
+void TWFFastDerivWrapper::mw_buildX(const RefVectorWithLeader<TWFFastDerivWrapper>& psi_wrapper_list,
+                                   const std::vector<std::vector<ValueMatrix>>& Minv,
+                                   const std::vector<std::vector<ValueMatrix>>& B_gs,
+                                   std::vector<std::vector<ValueMatrix>>& X)
+=======
 void TWFFastDerivWrapper::buildIntermediates(const std::vector<ValueMatrix>& Minv,
                                              const std::vector<ValueMatrix>& B,
                                              const std::vector<ValueMatrix>& M,
@@ -1030,13 +1032,9 @@ void TWFFastDerivWrapper::buildIntermediates_dmu(const std::vector<ValueMatrix>&
   }
 }
 
+>>>>>>> e51f733f1a9a2cb33fd0d48abcc2933b2387081e
 
-void TWFFastDerivWrapper::mw_buildX(const RefVectorWithLeader<TWFFastDerivWrapper>& psi_wrapper_list,
-                                   const std::vector<std::vector<ValueMatrix>>& Minv,
-                                   const std::vector<std::vector<ValueMatrix>>& B_gs,
-                                   std::vector<std::vector<ValueMatrix>>& X)
 {
-/*
 	 const int nw = psi_wrapper_list.size();
   if (nw == 0) return;
 
@@ -1056,7 +1054,7 @@ void TWFFastDerivWrapper::mw_buildX(const RefVectorWithLeader<TWFFastDerivWrappe
     // Call serial implementation
     wf.buildX(walker_Minv, walker_B_gs, walker_X);
   }
-*/	
+	/*
   const int nw = psi_wrapper_list.size();
   if (nw == 0)
     return;
@@ -1115,7 +1113,7 @@ void TWFFastDerivWrapper::mw_buildX(const RefVectorWithLeader<TWFFastDerivWrappe
                 zero,
                 X[iw][id].data(), ptclnum);   // X matrix and its leading dimension
     }
-  }
+  }*/
 }
 void TWFFastDerivWrapper::wipeMatrices(std::vector<ValueMatrix>& A)
 {
@@ -1125,16 +1123,15 @@ void TWFFastDerivWrapper::wipeMatrices(std::vector<ValueMatrix>& A)
   }
 }
 
+<<<<<<< HEAD
 
 
-/*
 void TWFFastDerivWrapper::mw_trAB(const RefVectorWithLeader<TWFFastDerivWrapper>& wf_list,
                                 const std::vector<std::vector<ValueMatrix>>& A_list,
                                 const std::vector<std::vector<std::vector<ValueMatrix>>>& B_list,
                                 std::vector<ValueType>& results,
                                 int dim)
 {
-	
   const int nw = wf_list.size();
   if (nw == 0)
     return;
@@ -1148,14 +1145,13 @@ void TWFFastDerivWrapper::mw_trAB(const RefVectorWithLeader<TWFFastDerivWrapper>
     
     // Call the serial trAB function for this walker
     results[w] = wf.trAB(A_list[w], B_list[w][dim]);
-  }
-}*/
-
+=======
 void TWFFastDerivWrapper::wipeVectors(std::vector<ValueVector>& A)
 {
   for (IndexType id = 0; id < A.size(); id++)
   {
     A[id] = 0.0;
+>>>>>>> e51f733f1a9a2cb33fd0d48abcc2933b2387081e
   }
 }
 
@@ -1181,7 +1177,7 @@ TWFFastDerivWrapper::ValueType TWFFastDerivWrapper::trAB(const std::vector<Value
 
   return val;
 }
-
+/*
 void TWFFastDerivWrapper::mw_trAB(const RefVectorWithLeader<TWFFastDerivWrapper>& wf_list,
                                 const std::vector<std::vector<ValueMatrix>>& A_list,
                                 const std::vector<std::vector<std::vector<ValueMatrix>>>& B_list,
@@ -1243,7 +1239,7 @@ void TWFFastDerivWrapper::mw_trAB(const RefVectorWithLeader<TWFFastDerivWrapper>
     }
   }
 }
-
+*/
 void TWFFastDerivWrapper::getGSMatrices(const std::vector<ValueMatrix>& A, std::vector<ValueMatrix>& Aslice) const
 {
   IndexType nspecies = A.size();
@@ -1262,7 +1258,7 @@ void TWFFastDerivWrapper::mw_getGSMatrices(const RefVectorWithLeader<TWFFastDeri
                                            std::vector<std::vector<ValueMatrix>>& Aslice_list)
 
 {
-/*  const int nw = wf_list.size();
+  const int nw = wf_list.size();
   if (nw == 0)
     return;
 Aslice_list.resize(nw);
@@ -1277,10 +1273,7 @@ Aslice_list.resize(nw);
     wf.getGSMatrices(A_list[w],       // Input matrices for this walker
                      Aslice_list[w]  // Output slice for this walker
                     );
-  }*/
-  const int nw = wf_list.size();
-  if (nw == 0)
-    return;
+  }/*
   // Find the maximum number of species across all walkers
   IndexType max_nspecies = 0;
   for (int iw = 0; iw < nw; ++iw)
@@ -1320,7 +1313,7 @@ Aslice_list.resize(nw);
         }
       }
     }
-  }
+  }*/
 }
 
 TWFFastDerivWrapper::IndexType TWFFastDerivWrapper::getRowM(const ParticleSet& P,
@@ -1342,6 +1335,65 @@ TWFFastDerivWrapper::IndexType TWFFastDerivWrapper::getRowM(const ParticleSet& P
 
   return sid;
 }
+/*
+void TWFFastDerivWrapper::mw_buildX(const RefVectorWithLeader<TWFFastDerivWrapper>& psi_wrapper_list,
+                                    const std::vector<std::vector<ValueMatrix>>& Minv,
+                                    const std::vector<std::vector<ValueMatrix>>& B_gs,
+                                    std::vector<std::vector<ValueMatrix>>& X)
+{
+  const int nw = psi_wrapper_list.size();
+  if (nw == 0)
+    return;
+
+  // Find the maximum number of species across all walkers
+  IndexType max_nspecies = 0;
+  for (int iw = 0; iw < nw; ++iw)
+  {
+    max_nspecies = std::max(max_nspecies, static_cast<IndexType>(Minv[iw].size()));
+  }
+
+  // Process all walkers by species
+  for (IndexType id = 0; id < max_nspecies; ++id)
+  {
+    // Process each walker for this species
+    for (int iw = 0; iw < nw; ++iw)
+    {
+      // Skip if this walker doesn't have this species
+      if (id >= Minv[iw].size() || id >= B_gs[iw].size())
+        continue;
+
+      // Get the input matrices for this walker and species
+      const ValueMatrix& Minv_matrix = Minv[iw][id];
+      const ValueMatrix& B_matrix    = B_gs[iw][id];
+      IndexType ptclnum              = Minv_matrix.rows();
+
+      // Skip if matrices don't match
+      if (Minv_matrix.rows() != Minv_matrix.cols() || B_matrix.rows() != ptclnum || B_matrix.cols() != ptclnum)
+        continue;
+
+      // Temp matrix for intermediate result
+      ValueMatrix tmpmat;
+      tmpmat.resize(ptclnum, ptclnum);
+
+      // Compute (B*A^-1)
+      for (int i = 0; i < ptclnum; i++)
+        for (int j = 0; j < ptclnum; j++)
+          for (int k = 0; k < ptclnum; k++)
+          {
+            tmpmat[i][j] += B_matrix[i][k] * Minv_matrix[k][j];
+          }
+
+      // Compute A^{-1}*B*A^{-1}
+      for (int i = 0; i < ptclnum; i++)
+        for (int j = 0; j < ptclnum; j++)
+          for (int k = 0; k < ptclnum; k++)
+          {
+            X[iw][id][i][j] += Minv_matrix[i][k] * tmpmat[k][j];
+          }
+    }
+  }
+}
+*/
 
 
 
@@ -1376,7 +1428,7 @@ void TWFFastDerivWrapper::mw_computeGSDerivative(const RefVectorWithLeader<TWFFa
                                                std::vector<ValueType>& results,
                                                int dim)
 {
-	
+	/*
   const int nw = wf_list.size();
   if (nw == 0)
     return;
@@ -1432,12 +1484,12 @@ void TWFFastDerivWrapper::mw_computeGSDerivative(const RefVectorWithLeader<TWFFa
 
         // Final result: Tr[M^{-1} dB^T] - Tr[X * dM^T]
         ValueType dval_s = trace_MinvdB - trace_XdM;
-#pragma omp atomic
+
         results[w] += dval_s;
       }
     }
   }
-  /*
+  */
 	const int nw = wf_list.size();
   if (nw == 0)
     return;
@@ -1461,7 +1513,7 @@ void TWFFastDerivWrapper::mw_computeGSDerivative(const RefVectorWithLeader<TWFFa
         X_list[iw],
         dM_dim,
         dB_dim);
-  }*/
+  }
 }
 
 
@@ -1484,7 +1536,7 @@ void TWFFastDerivWrapper::mw_wipeDerivMatrices(const RefVectorWithLeader<TWFFast
       wf_list[iw].wipeMatrices(matrices[iw][dim]);
 }
 
-/*
+
 void TWFFastDerivWrapper::mw_evaluateJastrowGradSource(const RefVectorWithLeader<TWFFastDerivWrapper>& wf_list,
                                                        const RefVectorWithLeader<ParticleSet>& p_list,
                                                        const RefVectorWithLeader<ParticleSet>& ion_list,
@@ -1505,7 +1557,7 @@ void TWFFastDerivWrapper::mw_evaluateJastrowGradSource(const RefVectorWithLeader
     wfgradraw[w][iat] = grad_iat;
   }
 }
-*/
+/*
 void TWFFastDerivWrapper::mw_evaluateJastrowGradSource(const RefVectorWithLeader<TWFFastDerivWrapper>& wf_list,
                                                      const RefVectorWithLeader<ParticleSet>& p_list,
                                                      const RefVectorWithLeader<ParticleSet>& ion_list,
@@ -1536,8 +1588,8 @@ void TWFFastDerivWrapper::mw_evaluateJastrowGradSource(const RefVectorWithLeader
     jastrow_leader_ptr->mw_evalGradSource(jastrow_ref_list, p_list, ion_list, iat, wfgradraw);
   }
 }
+*/
 
-/*
 void TWFFastDerivWrapper::mw_getIonGradM(const RefVectorWithLeader<TWFFastDerivWrapper>& wf_list,
                                          const RefVectorWithLeader<ParticleSet>& P_list,
                                          const RefVectorWithLeader<ParticleSet>& source_list,
@@ -1548,7 +1600,7 @@ void TWFFastDerivWrapper::mw_getIonGradM(const RefVectorWithLeader<TWFFastDerivW
   for (int iw = 0; iw < nw; ++iw)
     wf_list[iw].getIonGradM(P_list[iw], source_list[iw], iat, dmvec_list[iw]);
 }
-*/
+
 
 
 void TWFFastDerivWrapper::mw_getIonGradM_batch(const RefVectorWithLeader<TWFFastDerivWrapper>& wf_list,
@@ -1557,7 +1609,7 @@ void TWFFastDerivWrapper::mw_getIonGradM_batch(const RefVectorWithLeader<TWFFast
                                         const std::vector<int>& iat_list,
                                         std::vector<std::vector<std::vector<ValueMatrix>>>& dmvec_list)
 {   
-  auto& leader = wf_list.getLeader();
+/*  auto& leader = wf_list.getLeader();
   const int nw = wf_list.size();
   
   // Ensure we have an ion index for each walker
@@ -1618,8 +1670,12 @@ void TWFFastDerivWrapper::mw_getIonGradM_batch(const RefVectorWithLeader<TWFFast
       }
     }
   }
+  */
+	std::cout<<"mw_getIonGradM_batch"<<std::endl;
+	exit(0);
 }
 
+/*
 void TWFFastDerivWrapper::mw_getIonGradM(const RefVectorWithLeader<TWFFastDerivWrapper>& wf_list,
                                         const RefVectorWithLeader<ParticleSet>& P_list,
                                         const RefVectorWithLeader<ParticleSet>& source_list,
@@ -1684,7 +1740,7 @@ void TWFFastDerivWrapper::mw_getIonGradM(const RefVectorWithLeader<TWFFastDerivW
     }
   }
 }
-
+*/
 void TWFFastDerivWrapper::mw_getIonGradIonGradELaplM(const RefVectorWithLeader<TWFFastDerivWrapper>& wf_list,
                                                      const RefVectorWithLeader<ParticleSet>& P_list,
                                                      const RefVectorWithLeader<ParticleSet>& source_list,

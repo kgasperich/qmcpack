@@ -1213,6 +1213,7 @@ void QMCHamiltonian::mw_evaluateIonDerivsFast(const RefVectorWithLeader<QMCHamil
   psiW_leader.mw_wipeDerivMatrices(psi_wrapper_list, dB_gs);
 */
 
+  ///Kevin: M is suppose to be phi_v in LCAval_v ? // already in GPU. 
   // (E) Batched wavefunction building
   psiW_leader.mw_getM(psi_wrapper_list, elec_list, M);
   psiW_leader.mw_getGSMatrices(psi_wrapper_list, M, M_gs);
@@ -1264,9 +1265,7 @@ void QMCHamiltonian::mw_evaluateIonDerivsFast(const RefVectorWithLeader<QMCHamil
             op_list.push_back(*ham_list[iw].H[i]);
 
         // Call the batched implementation
-//        leader_ham.H[i]->mw_evaluateOneBodyOpMatrixForceDeriv(op_list, elec_list, ion_list, psi_wrapper_list, iat, dB);
-        for (int iw = 0; iw < nw; ++iw) 
-		ham_list[iw].H[i]->evaluateOneBodyOpMatrixForceDeriv(elec_list[iw], ion_list[iw], psi_wrapper_list[iw], iat, dB[iw]);
+        leader_ham.H[i]->mw_evaluateOneBodyOpMatrixForceDeriv(op_list, elec_list, ion_list, psi_wrapper_list, iat, dB);
       }
     // Process each dimension in batch
     for (int idim = 0; idim < OHMMS_DIM; idim++)
