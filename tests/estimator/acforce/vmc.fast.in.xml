@@ -310,7 +310,7 @@
   1.25722600000000e+00  0.00000000000000e+00  0.00000000000000e+00  0.00000000000000e+00
 </coefficient>
       </sposet>
-      <sposet basisset="LCAOBSet" name="spo-dn" size="14">
+      <sposet basisset="LCAOBSet" name="spo-dn" size="4">
         <occupation mode="ground"/>
         <coefficient size="26" id="dndetC">
   5.92498000000000e-01 -7.11710000000000e-02  0.00000000000000e+00  0.00000000000000e+00

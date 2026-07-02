@@ -835,7 +835,7 @@ void TWFFastDerivWrapper::buildIntermediates(const std::vector<ValueMatrix>& Min
     // n: all orbs (o+v)
 
     // Minv_Mv = Minv[o,e].M[e,v]
-    if (nvirt > 0) // avoid gemm call with LDC == 0
+    // if (nvirt > 0) // avoid gemm call with LDC == 0
       BLAS::gemm('n', 'n', nvirt, ptclnum, ptclnum, 1.0, M[id].data() + ptclnum, M[id].cols(), Minv[id].data(),
                  Minv[id].cols(), 0.0, Minv_Mv[id].data(), Minv_Mv[id].cols());
 
